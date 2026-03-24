@@ -95,7 +95,10 @@ export default function DashboardPage() {
       // Live Crypto
       for (const w of (cryptoW ?? [])) {
         try {
-          const res = await fetch(`/api/crypto?coin=${w.coin_symbol}`)
+          const { data: { session } } = await supabase.auth.getSession()
+          const res = await fetch(`/api/crypto?coin=${w.coin_symbol}`, {
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+          })
           const data = await res.json()
           const val = (w.balance || 0) * Number(data.price_idr || 0)
           const pnl24h = (w.balance || 0) * Number(data.change_24h_idr || 0)
@@ -125,7 +128,10 @@ export default function DashboardPage() {
       // Live Stock
       for (const s of (stockP ?? [])) {
         try {
-          const res = await fetch(`/api/stocks?ticker=${s.ticker}`)
+          const { data: { session } } = await supabase.auth.getSession()
+          const res = await fetch(`/api/stocks?ticker=${s.ticker}`, {
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+          })
           const data = await res.json()
           const val = (s.lots || 0) * 100 * Number(data.price || s.average_price || 0)
           const pnl24h = (s.lots || 0) * 100 * Number(data.change || 0)
