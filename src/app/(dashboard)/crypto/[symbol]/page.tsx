@@ -51,7 +51,7 @@ export default function CryptoDetailPage() {
         fetchDetails()
     }, [user, symbol])
 
-    if (loading) return <div className="spinner" />
+    if (loading || !symbol) return <div className="spinner" />
 
     const coinSymbol = Array.isArray(symbol) ? symbol[0] : symbol
     const tvSymbol = `BINANCE:${coinSymbol}USDT`

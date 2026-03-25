@@ -52,11 +52,11 @@ export default function StockDetailPage() {
     fetchDetails()
   }, [user, symbol])
 
-  if (loading) return <div className="spinner" />
+  if (loading || !symbol) return <div className="spinner" />
 
   const tickerSymbol = Array.isArray(symbol) ? symbol[0] : symbol
   // TradingView typically uses IDX for Indonesian stocks if it ends with .JK
-  let tvSymbol = tickerSymbol.includes('.') ? `IDX:${tickerSymbol.split('.')[0]}` : tickerSymbol
+  const tvSymbol = tickerSymbol.includes('.') ? `IDX:${tickerSymbol.split('.')[0]}` : tickerSymbol
 
   return (
     <div className="animate-in">
