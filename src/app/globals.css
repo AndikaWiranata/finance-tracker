@@ -645,6 +645,11 @@ tbody tr:hover td {
   display: flex;
 }
 
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
+
 .flex-between {
   display: flex;
   justify-content: space-between;

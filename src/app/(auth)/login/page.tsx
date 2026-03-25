@@ -1,7 +1,7 @@
 'use client'
 import { useState, FormEvent } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Mail, Lock, Smartphone, LogIn, ChevronRight, Zap, User } from 'lucide-react'
+import { Mail, Lock, Smartphone, LogIn, ChevronRight, Zap, User, AlertCircle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'react-hot-toast'
 import styles from './login.module.css'
@@ -22,6 +22,10 @@ export default function LoginPage() {
     
     try {
       if (mode === 'signup') {
+        if (/\s/.test(username)) {
+          throw new Error('Username tidak boleh mengandung spasi.')
+        }
+
         const { data, error: signUpError } = await supabase.auth.signUp({ 
           email: emailOrUsername, 
           password,
@@ -123,9 +127,26 @@ export default function LoginPage() {
                 className={styles.input}
                 placeholder="Username"
                 value={username}
-                onChange={e => setUsername(e.target.value)}
+                onChange={e => {
+                  const val = e.target.value
+                  setUsername(val)
+                }}
                 autoComplete="username"
               />
+              {/\s/.test(username) && (
+                <div style={{ 
+                  color: '#f87171', 
+                  fontSize: '12px', 
+                  marginTop: '6px', 
+                  marginLeft: '44px',
+                  fontWeight: 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <AlertCircle size={12} /> Username tidak boleh ada spasi
+                </div>
+              )}
             </div>
           )}
 

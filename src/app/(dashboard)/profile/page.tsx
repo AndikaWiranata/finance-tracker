@@ -130,6 +130,9 @@ export default function ProfilePage() {
       const { data: current } = await supabase.from('profiles').select('username').eq('id', user.id).single()
       
       if (profile.username !== current?.username) {
+        if (/\s/.test(profile.username)) {
+          throw new Error('Username tidak boleh mengandung spasi.')
+        }
         if (!canChangeUsername()) {
           throw new Error(`Username hanya bisa diubah sekali dalam 30 hari. Kamu harus menunggu ${daysUntilNextChange()} hari lagi.`)
         }
@@ -275,12 +278,17 @@ export default function ProfilePage() {
                   style={{ paddingLeft: 30 }}
                   placeholder="username_kamu"
                   value={profile.username}
-                  onChange={e => setProfile({ ...profile, username: e.target.value.toLowerCase().replace(/\s/g, '_') })}
-                  disabled={!canChangeUsername()}
+                  onChange={e => setProfile({ ...profile, username: e.target.value })}
+                  disabled={!isAdmin && !canChangeUsername()}
                 />
               </div>
-              <p style={{ fontSize: 11, color: canChangeUsername() ? 'var(--text-muted)' : 'var(--red)', marginTop: 4 }}>
-                {isAdmin ? 'Akun Admin bebas mengubah username kapan saja.' : 'Hanya bisa diubah **sekali dalam 30 hari**.'}
+              {/\s/.test(profile.username || '') && (
+                <div style={{ color: 'var(--red)', fontSize: '12px', marginTop: '8px', fontWeight: 600 }}>
+                  ⚠️ Username tidak boleh mengandung spasi
+                </div>
+              )}
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+                Penting: Username hanya bisa diganti 1x dalam 30 hari.
               </p>
             </div>
 

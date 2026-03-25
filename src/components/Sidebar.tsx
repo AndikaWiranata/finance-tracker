@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Wallet, ArrowLeftRight, TrendingUp, Bitcoin, Menu, LogOut, CandlestickChart, Sparkles, ShieldCheck, User } from 'lucide-react'
+import { LayoutDashboard, Wallet, ArrowLeftRight, TrendingUp, Bitcoin, Menu, LogOut, CandlestickChart, Sparkles, ShieldCheck, User, Landmark, Target, PieChart } from 'lucide-react'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -14,6 +14,9 @@ const navItems = [
   { href: '/stocks', label: 'Saham', icon: TrendingUp },
   { href: '/crypto', label: 'Crypto', icon: Bitcoin },
   { href: '/forex', label: 'Forex', icon: CandlestickChart },
+  { href: '/debts', label: 'Hutang & Piutang', icon: Landmark },
+  { href: '/goals', label: 'Target Masa Depan', icon: Target },
+  { href: '/budgets', label: 'Anggaran Bulanan', icon: PieChart },
   { href: '/ai', label: 'AI Advisor', icon: Sparkles },
   { href: '/admin', label: 'Admin Panel', icon: ShieldCheck, adminOnly: true },
 ]

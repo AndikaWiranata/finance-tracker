@@ -10,6 +10,8 @@ import {
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid } from 'recharts'
 import Link from 'next/link'
+import { processRecurringTransactions } from '@/lib/recurring'
+import { toast } from 'react-hot-toast'
 
 const TYPE_CONFIG: Record<string, { color: string; icon: string; bg: string }> = {
   bank:    { color: '#3b82f6', icon: '🏦', bg: 'rgba(59,130,246,0.15)' },
@@ -43,6 +45,17 @@ export default function DashboardPage() {
   useEffect(() => {
     async function load() {
       if (!user) return
+      
+      // Auto-process recurring transactions
+      try {
+        const processed = await processRecurringTransactions(supabase, user.id)
+        if (processed.length > 0) {
+          toast.success(`Berhasil memproses ${processed.length} transaksi rutin otomatis!`)
+        }
+      } catch (err) {
+        console.error('Error processing recurring:', err)
+      }
+
       const todayStr = new Date().toISOString().slice(0, 10)
       const [{ data: accs }, { data: txns }, { data: todayTx }, { data: cryptoW }, { data: forexA }, { data: stockP }, { data: historyTx }, { data: snapshots }] = await Promise.all([
         supabase.from('accounts').select('*').eq('user_id', user.id),

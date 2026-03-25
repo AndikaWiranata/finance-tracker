@@ -4,8 +4,9 @@ import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { formatNumberInput, parseNumberInput } from '@/lib/currency'
 import { Account, Transaction } from '@/types'
-import { Plus, X, ArrowLeftRight, Filter, Pencil, Trash2, AlertTriangle } from 'lucide-react'
+import { Plus, X, ArrowLeftRight, Filter, Pencil, Trash2, AlertTriangle, RefreshCw } from 'lucide-react'
 import { toast } from 'react-hot-toast'
+import Link from 'next/link'
 
 function formatIDR(n: number) {
   // If no decimals needed, keep it 0. If it has decimals, show up to 2 for IDR conversion.
@@ -22,8 +23,8 @@ function formatDate(d: string) {
 const LIQUID_TYPES = ['bank', 'cash', 'ewallet']
 
 const CATEGORIES = {
-  income:  ['Salary', 'Freelance', 'Investment', 'Gift', 'Bonus', 'Other Income'],
-  expense: ['Food', 'Transport', 'Shopping', 'Entertainment', 'Health', 'Bills', 'Education', 'Other'],
+  income:  ['Salary', 'Freelance', 'Investment', 'Gift', 'Bonus'],
+  expense: ['Food', 'Transport', 'Shopping', 'Entertainment', 'Health', 'Bills', 'Education'],
 }
 
 export default function TransactionsPage() {
@@ -44,7 +45,9 @@ export default function TransactionsPage() {
     note: '',
     date: new Date().toISOString().slice(0, 10),
   })
+  const [userCategories, setUserCategories] = useState<{name: string, type: string}[]>([])
   const [saving, setSaving] = useState(false)
+  const [customCategory, setCustomCategory] = useState('')
   const [editId, setEditId] = useState<number | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [showTransferModal, setShowTransferModal] = useState(false)
@@ -58,17 +61,19 @@ export default function TransactionsPage() {
 
   async function load() {
     if (!user) return
-    const [{ data: txns }, { data: accs }] = await Promise.all([
+    const [{ data: txns }, { data: accs }, { data: userCats }] = await Promise.all([
       supabase.from('transactions')
         .select('*, accounts(name, currency)')
         .eq('user_id', user.id)
         .order('date', { ascending: false })
         .order('created_at', { ascending: false }),
       supabase.from('accounts').select('*').eq('user_id', user.id),
+      supabase.from('user_categories').select('name, type').eq('user_id', user.id)
     ])
     setTransactions(txns ?? [])
     const loadedAccs = accs ?? []
     setAccounts(loadedAccs)
+    setUserCategories(userCats ?? [])
     
     // Set default account to the first liquid one
     const liquid = loadedAccs.filter(a => LIQUID_TYPES.includes(a.type))
@@ -128,6 +133,21 @@ export default function TransactionsPage() {
 
     setSaving(true)
     const acc = accounts.find(a => a.id === parseInt(form.account_id))
+
+    let finalCategory = form.category
+    if (form.category === 'Other') {
+      if (!customCategory.trim()) {
+        setSaving(false)
+        return toast.error('Kategori harus diisi')
+      }
+      finalCategory = customCategory.trim()
+      // Auto-save to user_categories
+      await supabase.from('user_categories').upsert({
+        user_id: user.id,
+        name: finalCategory,
+        type: form.type
+      }, { onConflict: 'user_id, name, type' })
+    }
     
     if (editId) {
       // Find old transaction to revert balance
@@ -142,7 +162,7 @@ export default function TransactionsPage() {
         account_id: parseInt(form.account_id),
         type: form.type,
         amount: amount,
-        category: form.category,
+        category: finalCategory,
         note: form.note || null,
         date: form.date,
       }).eq('id', editId)
@@ -157,7 +177,7 @@ export default function TransactionsPage() {
         user_id: user.id,
         type: form.type,
         amount: amount,
-        category: form.category,
+        category: finalCategory,
         note: form.note || null,
         date: form.date,
       })
@@ -184,15 +204,17 @@ export default function TransactionsPage() {
   }
 
   function startEdit(t: Transaction) {
+    const isCustom = !CATEGORIES[t.type].includes(t.category)
     setEditId(t.id)
     setForm({
       account_id: String(t.account_id),
       type: t.type,
       amount: formatNumberInput(t.amount),
-      category: t.category,
+      category: isCustom ? 'Other' : t.category,
       note: t.note || '',
       date: t.date
     })
+    setCustomCategory(isCustom ? t.category : '')
     setShowModal(true)
   }
 
@@ -272,6 +294,9 @@ export default function TransactionsPage() {
           <p className="page-subtitle">{filtered.length} records</p>
         </div>
         <div className="flex gap-2">
+          <Link href="/transactions/recurring" className="btn btn-ghost" style={{ gap: 8 }}>
+            <RefreshCw size={16} /> Jadwal Rutin
+          </Link>
           <button className="btn btn-ghost" onClick={() => {
             if (liquidAccounts.length < 2) {
               toast.error("You need at least 2 liquid accounts to make a transfer")
@@ -515,9 +540,20 @@ export default function TransactionsPage() {
                   <select className="form-select" value={form.category}
                     onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
                     {CATEGORIES[form.type].map(c => <option key={c} value={c}>{c}</option>)}
+                    {userCategories.filter(uc => uc.type === form.type && !CATEGORIES[form.type].includes(uc.name)).map(uc => (
+                      <option key={uc.name} value={uc.name}>{uc.name}</option>
+                    ))}
+                    <option value="Other">Other (Custom)</option>
                   </select>
                 </div>
               </div>
+
+              {form.category === 'Other' && (
+                <div className="form-group animate-in">
+                  <label className="form-label">Custom Category Name</label>
+                  <input type="text" className="form-input" placeholder="Type category name..." value={customCategory} onChange={e => setCustomCategory(e.target.value)} required autoFocus />
+                </div>
+              )}
 
               <div className="form-group">
                 <label className="form-label">Date</label>
