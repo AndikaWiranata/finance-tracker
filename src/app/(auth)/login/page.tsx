@@ -1,19 +1,28 @@
 'use client'
-import { useState, FormEvent } from 'react'
+import { useState, FormEvent, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Mail, Lock, Smartphone, LogIn, ChevronRight, Zap, User, AlertCircle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'react-hot-toast'
+import { useAuth } from '@/components/AuthProvider'
 import styles from './login.module.css'
 
 export default function LoginPage() {
   const router = useRouter()
+  const { user, loading: authLoading } = useAuth()
   const [emailOrUsername, setEmailOrUsername] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login')
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user && !authLoading) {
+      router.push('/')
+    }
+  }, [user, authLoading, router])
 
   async function handleEmailAuth(e: FormEvent) {
     e.preventDefault()
