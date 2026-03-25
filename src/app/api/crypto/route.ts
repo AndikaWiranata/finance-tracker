@@ -46,6 +46,10 @@ export async function GET(req: NextRequest) {
       price_idr: raw.PRICE || 0,
       change_24h_idr: raw.CHANGE24HOUR || 0,
       change_24h_pct: raw.CHANGEPCT24HOUR || 0,
+      low_24h_usd: rawUSD.LOW24HOUR || 0,
+      high_24h_usd: rawUSD.HIGH24HOUR || 0,
+      volume_24h_usd: rawUSD.VOLUME24HOUR || 0,
+      market_cap_usd: rawUSD.MKTCAP || 0,
       coin,
     })
   } catch (err) {

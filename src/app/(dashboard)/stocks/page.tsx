@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { formatNumberInput, parseNumberInput } from '@/lib/currency'
@@ -18,6 +19,7 @@ function formatPercent(n: number) {
 }
 
 export default function StocksPage() {
+  const router = useRouter()
   const [accounts, setAccounts] = useState<Account[]>([])
   const [stocks, setStocks] = useState<StockWithAccount[]>([])
   const [loading, setLoading] = useState(true)
@@ -173,7 +175,15 @@ export default function StocksPage() {
             const dailyPNL = st.lots * 100 * (live?.change || 0)
             
             return (
-              <div key={st.id} className="card" style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div 
+                key={st.id} 
+                className="card asset-row" 
+                style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
+                onClick={(e) => {
+                   if ((e.target as HTMLElement).closest('button')) return
+                   router.push(`/stocks/${encodeURIComponent(st.ticker)}`)
+                }}
+              >
                 <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(236,72,153,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: '#ec4899' }}>
                   📈
                 </div>
@@ -220,13 +230,17 @@ export default function StocksPage() {
                         <div style={{ fontSize: 16, fontWeight: 700, color: '#ec4899' }}>{formatIDR(totalValue)}</div>
                       </div>
                       <div className="flex gap-2">
-                        <button className="btn btn-ghost btn-sm" onClick={() => {
+                        <button className="btn btn-ghost btn-sm" onClick={(e) => {
+                          e.stopPropagation()
                           setEditing(st.id)
                           setEditForm({ lots: String(st.lots), avgPrice: String(st.average_price) })
                         }}>
                           <Edit2 size={13} />
                         </button>
-                        <button className="btn btn-danger btn-sm" onClick={() => deleteStock(st.id)}>
+                        <button className="btn btn-danger btn-sm" onClick={(e) => {
+                          e.stopPropagation()
+                          deleteStock(st.id)
+                        }}>
                           <X size={14} />
                         </button>
                       </div>

@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { formatNumberInput, parseNumberInput } from '@/lib/currency'
@@ -29,6 +30,7 @@ function formatCrypto(n: number) {
 }
 
 export default function CryptoPage() {
+  const router = useRouter()
   const [accounts, setAccounts] = useState<Account[]>([])
   const [wallets, setWallets] = useState<WalletWithAccount[]>([])
   const [loading, setLoading] = useState(true)
@@ -196,7 +198,15 @@ export default function CryptoPage() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {wallets.map(wl => (
-            <div key={wl.id} className="card" style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <div 
+              key={wl.id} 
+              className="card asset-row" 
+              style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', cursor: 'pointer', transition: 'all 0.2s', position: 'relative' }}
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest('button')) return
+                router.push(`/crypto/${wl.coin_symbol}`)
+              }}
+            >
               <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center', fontSize: 22 }}>
                 ₿
               </div>
@@ -229,13 +239,17 @@ export default function CryptoPage() {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <button className="btn btn-ghost btn-sm" onClick={() => {
+                  <button className="btn btn-ghost btn-sm" onClick={(e) => {
+                    e.stopPropagation()
                     setUpdatingWl(wl)
                     setUpdateForm({ balance: formatNumberInput(wl.balance || 0), isProfitLoss: true })
                   }}>
                     <Edit2 size={13} />
                   </button>
-                  <button className="btn btn-danger btn-sm" onClick={() => deleteWallet(wl.id)}>
+                  <button className="btn btn-danger btn-sm" onClick={(e) => {
+                    e.stopPropagation()
+                    deleteWallet(wl.id)
+                  }}>
                     <X size={14} />
                   </button>
                 </div>

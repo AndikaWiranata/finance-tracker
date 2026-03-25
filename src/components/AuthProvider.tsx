@@ -8,28 +8,46 @@ type AuthContextType = {
   user: User | null
   loading: boolean
   isAdmin: boolean
+  profile: {
+    display_name: string | null
+    avatar_url: string | null
+    username: string | null
+  } | null
 }
 
-const AuthContext = createContext<AuthContextType>({ session: null, user: null, loading: true, isAdmin: false })
+const AuthContext = createContext<AuthContextType>({ 
+  session: null, 
+  user: null, 
+  loading: true, 
+  isAdmin: false,
+  profile: null
+})
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [profile, setProfile] = useState<AuthContextType['profile']>(null)
   const [loading, setLoading] = useState(true)
 
-  async function checkAdminStatus(u: User | null) {
+  async function fetchUserProfile(u: User | null) {
     if (!u) {
       setIsAdmin(false)
+      setProfile(null)
       return
     }
-    const { data: profile } = await supabase
+    const { data } = await supabase
       .from('profiles')
-      .select('is_admin')
+      .select('is_admin, display_name, avatar_url, username')
       .eq('id', u.id)
       .single()
     
-    setIsAdmin(!!profile?.is_admin)
+    setIsAdmin(!!data?.is_admin)
+    setProfile({
+      display_name: data?.display_name || null,
+      avatar_url: data?.avatar_url || null,
+      username: data?.username || null
+    })
   }
 
   useEffect(() => {
@@ -37,21 +55,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session)
       const u = session?.user ?? null
       setUser(u)
-      checkAdminStatus(u).then(() => setLoading(false))
+      fetchUserProfile(u).then(() => setLoading(false))
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
       const u = session?.user ?? null
       setUser(u)
-      checkAdminStatus(u).then(() => setLoading(false))
+      fetchUserProfile(u).then(() => setLoading(false))
     })
 
     return () => subscription.unsubscribe()
   }, [])
 
   return (
-    <AuthContext.Provider value={{ session, user, loading, isAdmin }}>
+    <AuthContext.Provider value={{ session, user, loading, isAdmin, profile }}>
       {children}
     </AuthContext.Provider>
   )

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, FormEvent } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { formatIDR } from '@/lib/currency'
@@ -74,7 +74,7 @@ export default function AdminDashboard() {
     if (user) loadAdminData()
   }, [user])
 
-  const sendBroadcast = (e: React.FormEvent) => {
+  const sendBroadcast = (e: FormEvent) => {
     e.preventDefault()
     if (!broadcastMsg) return
     toast.success(`Broadcasting to all users: "${broadcastMsg}"`, {

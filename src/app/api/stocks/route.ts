@@ -39,7 +39,16 @@ export async function GET(req: NextRequest) {
     const change = meta.regularMarketChange || 0
     const changePct = meta.regularMarketChangePercent || 0
 
-    return NextResponse.json({ price, change, changePct, symbol: meta.symbol || symbol, currency: meta.currency || 'IDR' })
+    return NextResponse.json({ 
+      price, 
+      change, 
+      changePct, 
+      low: meta.regularMarketDayLow || 0,
+      high: meta.regularMarketDayHigh || 0,
+      volume: meta.regularMarketVolume || 0,
+      symbol: meta.symbol || symbol, 
+      currency: meta.currency || 'IDR' 
+    })
   } catch (err) {
     console.error('Failed to fetch stock price:', err)
     return NextResponse.json({ error: 'Failed to fetch data', price: 0 }, { status: 500 })
