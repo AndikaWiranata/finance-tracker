@@ -19,6 +19,8 @@ function formatDate(d: string) {
   return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+const LIQUID_TYPES = ['bank', 'cash', 'ewallet']
+
 const CATEGORIES = {
   income:  ['Salary', 'Freelance', 'Investment', 'Gift', 'Bonus', 'Other Income'],
   expense: ['Food', 'Transport', 'Shopping', 'Entertainment', 'Health', 'Bills', 'Education', 'Other'],
@@ -67,7 +69,14 @@ export default function TransactionsPage() {
     setTransactions(txns ?? [])
     const loadedAccs = accs ?? []
     setAccounts(loadedAccs)
-    if (loadedAccs.length > 0) setForm(f => ({ ...f, account_id: String(loadedAccs[0].id) }))
+    
+    // Set default account to the first liquid one
+    const liquid = loadedAccs.filter(a => LIQUID_TYPES.includes(a.type))
+    if (liquid.length > 0) {
+        setForm(f => ({ ...f, account_id: String(liquid[0].id) }))
+    } else if (loadedAccs.length > 0) {
+        setForm(f => ({ ...f, account_id: String(loadedAccs[0].id) }))
+    }
     setLoading(false)
   }
 
@@ -251,6 +260,8 @@ export default function TransactionsPage() {
   const totalIncome = filtered.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount), 0)
   const totalExpense = filtered.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount), 0)
 
+  const liquidAccounts = accounts.filter(a => LIQUID_TYPES.includes(a.type))
+
   if (loading) return <div className="spinner" />
 
   return (
@@ -262,11 +273,11 @@ export default function TransactionsPage() {
         </div>
         <div className="flex gap-2">
           <button className="btn btn-ghost" onClick={() => {
-            if (accounts.length < 2) {
-              toast.error("You need at least 2 accounts to make a transfer")
+            if (liquidAccounts.length < 2) {
+              toast.error("You need at least 2 liquid accounts to make a transfer")
               return
             }
-            setTransferForm(f => ({ ...f, from_id: String(accounts[0].id), to_id: String(accounts[1]?.id || accounts[0].id) }))
+            setTransferForm(f => ({ ...f, from_id: String(liquidAccounts[0].id), to_id: String(liquidAccounts[1]?.id || liquidAccounts[0].id) }))
             setShowTransferModal(true)
           }}>
             <ArrowLeftRight size={16} /> Transfer
@@ -274,7 +285,7 @@ export default function TransactionsPage() {
           <button className="btn btn-primary" onClick={() => {
             setEditId(null)
             setForm({
-              account_id: accounts[0]?.id.toString() || '',
+              account_id: liquidAccounts[0]?.id.toString() || accounts[0]?.id.toString() || '',
               type: 'expense',
               amount: '',
               category: 'Food',
@@ -489,7 +500,7 @@ export default function TransactionsPage() {
                 <label className="form-label">Account</label>
                 <select className="form-select" required value={form.account_id}
                   onChange={e => setForm(f => ({ ...f, account_id: e.target.value }))}>
-                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}
+                  {liquidAccounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}
                 </select>
               </div>
 
@@ -546,7 +557,7 @@ export default function TransactionsPage() {
                 <label className="form-label">From Account</label>
                 <select className="form-select" required value={transferForm.from_id}
                   onChange={e => setTransferForm(f => ({ ...f, from_id: e.target.value }))}>
-                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({formatIDR(Number(a.balance))})</option>)}
+                  {liquidAccounts.map(a => <option key={a.id} value={a.id}>{a.name} ({formatIDR(Number(a.balance))})</option>)}
                 </select>
               </div>
 
@@ -554,7 +565,7 @@ export default function TransactionsPage() {
                 <label className="form-label">To Account</label>
                 <select className="form-select" required value={transferForm.to_id}
                   onChange={e => setTransferForm(f => ({ ...f, to_id: e.target.value }))}>
-                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({formatIDR(Number(a.balance))})</option>)}
+                  {liquidAccounts.map(a => <option key={a.id} value={a.id}>{a.name} ({formatIDR(Number(a.balance))})</option>)}
                 </select>
               </div>
 

@@ -44,7 +44,7 @@ export default function DashboardPage() {
     async function load() {
       if (!user) return
       const todayStr = new Date().toISOString().slice(0, 10)
-      const [{ data: accs }, { data: txns }, { data: todayTx }, { data: cryptoW }, { data: forexA }, { data: stockP }, { data: historyTx }] = await Promise.all([
+      const [{ data: accs }, { data: txns }, { data: todayTx }, { data: cryptoW }, { data: forexA }, { data: stockP }, { data: historyTx }, { data: snapshots }] = await Promise.all([
         supabase.from('accounts').select('*').eq('user_id', user.id),
         supabase.from('transactions')
           .select('*, accounts(name, currency)')
@@ -61,6 +61,10 @@ export default function DashboardPage() {
           .select('amount, type, date')
           .eq('user_id', user.id)
           .order('date', { ascending: false }),
+        supabase.from('net_worth_snapshots')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('date', { ascending: true })
       ])
       
       const loadedAccs = accs ?? []
@@ -71,7 +75,6 @@ export default function DashboardPage() {
       const exTot = (todayTx ?? []).filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount), 0)
       setTodayTotals({ income: inTot, expense: exTot })
 
-      // Group today's stats by category
       const catStats: Record<string, { income: number, expense: number, pnl: number }> = {}
       ;(todayTx ?? []).forEach((t: any) => {
         const type = t.accounts?.type || 'other'
@@ -82,7 +85,6 @@ export default function DashboardPage() {
 
       const accsWithIdr = loadedAccs.map((a: any) => ({ ...a, idrValue: 0 }))
 
-      // Auto-Calculate Total in IDR
       let total = 0
       let totalFloating = 0
       for (const a of accsWithIdr) {
@@ -92,7 +94,6 @@ export default function DashboardPage() {
         }
       }
 
-      // Live Crypto
       for (const w of (cryptoW ?? [])) {
         try {
           const { data: { session } } = await supabase.auth.getSession()
@@ -102,19 +103,15 @@ export default function DashboardPage() {
           const data = await res.json()
           const val = (w.balance || 0) * Number(data.price_idr || 0)
           const pnl24h = (w.balance || 0) * Number(data.change_24h_idr || 0)
-          
           total += val
           totalFloating += pnl24h
-          
           if (!catStats['crypto']) catStats['crypto'] = { income: 0, expense: 0, pnl: 0 }
           catStats['crypto'].pnl += pnl24h
-
           const target = accsWithIdr.find((a: any) => a.id === w.account_id)
           if (target) target.idrValue += val
         } catch (e) {}
       }
 
-      // Live Forex
       for (const f of (forexA ?? [])) {
         try {
           const base = f.currency_pair.split('/')[0] || 'USD'
@@ -125,7 +122,6 @@ export default function DashboardPage() {
         } catch (e) {}
       }
 
-      // Live Stock
       for (const s of (stockP ?? [])) {
         try {
           const { data: { session } } = await supabase.auth.getSession()
@@ -135,13 +131,10 @@ export default function DashboardPage() {
           const data = await res.json()
           const val = (s.lots || 0) * 100 * Number(data.price || s.average_price || 0)
           const pnl24h = (s.lots || 0) * 100 * Number(data.change || 0)
-
           total += val
           totalFloating += pnl24h
-
           if (!catStats['stock']) catStats['stock'] = { income: 0, expense: 0, pnl: 0 }
           catStats['stock'].pnl += pnl24h
-
           const target = accsWithIdr.find((a: any) => a.id === s.account_id)
           if (target) target.idrValue += val
         } catch (e) {}
@@ -152,31 +145,84 @@ export default function DashboardPage() {
       setTotalNetWorth(total)
       setFloatingPNL(totalFloating)
 
-      // Calculate History Data for Chart
-      if (historyTx) {
+      // Save/Update Snapshot for today
+      if (total > 0) {
+        await supabase.from('net_worth_snapshots').upsert({
+          user_id: user.id,
+          date: todayStr,
+          net_worth: total,
+          metadata: { breakdown: accsWithIdr.map(a => ({ type: a.type, val: a.idrValue })) }
+        }, { onConflict: 'user_id,date' })
+      }
+
+      // Calculate Chart Data
+      let finalHistory: any[] = []
+      const hasTodaySnapshot = snapshots?.some(s => s.date === todayStr)
+
+      // 1. Start with historical snapshots
+      if (snapshots && snapshots.length > 0) {
+        finalHistory = snapshots.map(s => ({
+          date: new Date(s.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+          value: Number(s.net_worth),
+          rawDate: s.date
+        }))
+      }
+
+      // 2. Ensure "Sekarang" (Live Value) is present and synced
+      if (total > 0) {
+        if (!hasTodaySnapshot) {
+          finalHistory.push({
+            date: 'Sekarang',
+            value: total,
+            rawDate: todayStr
+          })
+        } else {
+          // Sync existing today's snapshot with live total
+          const todayIdx = finalHistory.findIndex(p => p.rawDate === todayStr)
+          if (todayIdx !== -1) {
+            finalHistory[todayIdx].value = total
+            finalHistory[todayIdx].date = 'Sekarang'
+          }
+        }
+      }
+
+      // 3. Fallback: Prepend transaction-based history if we lack data points
+      if (finalHistory.length < 2 && historyTx && historyTx.length > 0) {
         let runningTotal = total
-        
-        // Group transactions by date
         const groupedHistory = historyTx.reduce((acc: any, t: any) => {
           if (!acc[t.date]) acc[t.date] = 0
           acc[t.date] += t.type === 'income' ? Number(t.amount) : -Number(t.amount)
           return acc
         }, {})
-
-        // Get full range of dates for calculation
-        const dates = Object.keys(groupedHistory).sort((a, b) => b.localeCompare(a))
         
-        const allPoints: any[] = [{ date: 'Sekarang', value: total, rawDate: todayStr }]
+        const dates = Object.keys(groupedHistory).sort((a, b) => b.localeCompare(a))
+        const txPoints: any[] = []
+        
         for (const d of dates) {
           runningTotal -= groupedHistory[d]
-          allPoints.push({
-            date: new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
-            value: runningTotal,
-            rawDate: d
-          })
+          // Avoid duplicates with snapshots
+          if (!finalHistory.some(p => p.rawDate === d)) {
+            txPoints.push({
+              date: new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+              value: runningTotal,
+              rawDate: d
+            })
+          }
         }
-        setHistoryData(allPoints.reverse())
+        finalHistory = [...txPoints.reverse(), ...finalHistory]
       }
+
+      // 4. Force Render: If still only 1 point (no history), add a dummy 'Yesterday' point
+      if (finalHistory.length === 1 && total > 0) {
+          const yesterday = new Date(new Date().getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0,10)
+          finalHistory.unshift({
+              date: new Date(yesterday).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+              value: finalHistory[0].value,
+              rawDate: yesterday
+          })
+      }
+
+      setHistoryData(finalHistory)
 
       setLoading(false)
     }
