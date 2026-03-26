@@ -408,13 +408,18 @@ export default function TransactionsPage() {
                 <>
                   <optgroup label="Income">
                     {CATEGORIES.income.map(c => <option key={c} value={c}>{c}</option>)}
+                    {userCategories.filter(uc => uc.type === 'income').map(uc => <option key={uc.name} value={uc.name}>{uc.name}</option>)}
                   </optgroup>
                   <optgroup label="Expense">
                     {CATEGORIES.expense.map(c => <option key={c} value={c}>{c}</option>)}
+                    {userCategories.filter(uc => uc.type === 'expense').map(uc => <option key={uc.name} value={uc.name}>{uc.name}</option>)}
                   </optgroup>
                 </>
               ) : (
-                CATEGORIES[filterType as keyof typeof CATEGORIES].map(c => <option key={c} value={c}>{c}</option>)
+                <>
+                  {CATEGORIES[filterType as keyof typeof CATEGORIES].map(c => <option key={c} value={c}>{c}</option>)}
+                  {userCategories.filter(uc => uc.type === filterType).map(uc => <option key={uc.name} value={uc.name}>{uc.name}</option>)}
+                </>
               )}
             </select>
           </div>
