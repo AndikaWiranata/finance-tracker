@@ -37,7 +37,9 @@ export default function TransactionsPage() {
   const [filterAccount, setFilterAccount] = useState<string>('all')
   const [filterType, setFilterType] = useState<string>('all')
   const [filterCategory, setFilterCategory] = useState<string>('all')
-  const [filterPeriod, setFilterPeriod] = useState<string>('all')
+  const [filterPeriod, setFilterPeriod] = useState<string>('today')
+  const [customStart, setCustomStart] = useState<string>(getLocalDateISO())
+  const [customEnd, setCustomEnd] = useState<string>(getLocalDateISO())
   const [form, setForm] = useState({
     account_id: '',
     type: 'expense' as 'income' | 'expense',
@@ -115,6 +117,8 @@ export default function TransactionsPage() {
       end = `${lastDayOfMonth.getFullYear()}-${String(lastDayOfMonth.getMonth() + 1).padStart(2, '0')}-${String(lastDayOfMonth.getDate()).padStart(2, '0')}`
     } else if (filterPeriod === 'this_year') {
       start = `${today.getFullYear()}-01-01`
+    } else if (filterPeriod === 'custom') {
+      [start, end] = [customStart, customEnd]
     }
 
     const matchStart = !start || t.date >= start
@@ -356,7 +360,9 @@ export default function TransactionsPage() {
             <button 
               onClick={() => {
                 setFilterAccount('all'); setFilterType('all'); setFilterCategory('all');
-                setFilterPeriod('all');
+                setFilterPeriod('today');
+                setCustomStart(getLocalDateISO());
+                setCustomEnd(getLocalDateISO());
               }}
               style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
             >
@@ -415,9 +421,25 @@ export default function TransactionsPage() {
               <option value="this_month">Bulan Ini</option>
               <option value="last_month">Bulan Lalu</option>
               <option value="this_year">Tahun Ini</option>
+              <option value="custom">Pilih Tanggal...</option>
             </select>
           </div>
         </div>
+
+        {filterPeriod === 'custom' && (
+          <div className="animate-in" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" style={{ fontSize: 11 }}>Dari Tanggal</label>
+              <input type="date" className="form-input" style={{ padding: '6px 12px' }}
+                value={customStart} onChange={e => setCustomStart(e.target.value)} />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" style={{ fontSize: 11 }}>Sampai Tanggal</label>
+              <input type="date" className="form-input" style={{ padding: '6px 12px' }}
+                value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Table */}
