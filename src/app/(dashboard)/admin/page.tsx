@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { formatIDR } from '@/lib/currency'
 import { Users, Landmark, Activity, Megaphone, CheckCircle2, AlertCircle, TrendingUp } from 'lucide-react'
 import { toast } from 'react-hot-toast'
+import { Trash2, ShieldOff, Search, UserCheck } from 'lucide-react'
 
 export default function AdminDashboard() {
   const { user, isAdmin, loading: authLoading } = useAuth()
@@ -30,6 +31,8 @@ export default function AdminDashboard() {
     apiStocks: 'checking',
     apiGemini: 'checking'
   })
+  const [users, setUsers] = useState<any[]>([])
+  const [userSearch, setUserSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [broadcastMsg, setBroadcastMsg] = useState('')
 
@@ -49,11 +52,14 @@ export default function AdminDashboard() {
 
       // 4. API Health Check
       const { data: { session } } = await supabase.auth.getSession()
-      const [cryptoRes, stockRes, aiRes] = await Promise.all([
+      const [cryptoRes, stockRes, aiRes, userListRes] = await Promise.all([
         fetch('/api/crypto?coin=BTC', { headers: { 'Authorization': `Bearer ${session?.access_token}` } }).then(r => r.ok),
         fetch('/api/stocks?ticker=BBCA.JK', { headers: { 'Authorization': `Bearer ${session?.access_token}` } }).then(r => r.ok),
-        fetch('/api/ai', { headers: { 'Authorization': `Bearer ${session?.access_token}` } }).then(r => r.ok)
+        fetch('/api/ai', { headers: { 'Authorization': `Bearer ${session?.access_token}` } }).then(r => r.ok),
+        supabase.from('profiles').select('*').order('created_at', { ascending: false })
       ])
+      
+      const profiles = userListRes.data || []
 
       setStats({
         totalUsers: uniqueUsers,
@@ -63,6 +69,7 @@ export default function AdminDashboard() {
         apiStocks: stockRes ? 'active' : 'error',
         apiGemini: aiRes ? 'active' : 'error'
       })
+      setUsers(profiles)
     } catch (e) {
       console.error('Admin load error:', e)
     } finally {
@@ -83,6 +90,35 @@ export default function AdminDashboard() {
     })
     setBroadcastMsg('')
   }
+
+  const toggleUserStatus = async (targetId: string, currentStatus: boolean) => {
+    const { error } = await supabase.from('profiles').update({ is_disabled: !currentStatus }).eq('id', targetId)
+    if (error) {
+      toast.error("Gagal update status: " + error.message)
+    } else {
+      toast.success(currentStatus ? "User diaktifkan kembali" : "User berhasil di-disable")
+      loadAdminData()
+    }
+  }
+
+  const deleteUserRecord = async (targetId: string) => {
+    if (!confirm("Hapus permanen data user ini? (Data di auth.users tetap ada kecuali dihapus via Dashboard Supabase)")) return
+    
+    // Note: Deleting from profiles is usually enough to "ghost" them if RLS depends on profiles
+    const { error } = await supabase.from('profiles').delete().eq('id', targetId)
+    if (error) {
+       toast.error("Gagal menghapus profile: " + error.message)
+    } else {
+       toast.success("Profile user berhasil dihapus")
+       loadAdminData()
+    }
+  }
+
+  const filteredUsers = users.filter(u => 
+    u.username?.toLowerCase().includes(userSearch.toLowerCase()) || 
+    u.display_name?.toLowerCase().includes(userSearch.toLowerCase()) ||
+    u.email?.toLowerCase().includes(userSearch.toLowerCase())
+  )
 
   if (loading) return <div className="spinner" />
 
@@ -212,6 +248,93 @@ export default function AdminDashboard() {
               Jika status <strong>Error</strong>, kemungkinan API limit tercapai atau service sedang down.
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* User Management Section */}
+      <div className="card" style={{ marginTop: 24 }}>
+        <div className="flex-between mb-6">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+             <Users size={18} color="var(--accent)" />
+             <h3 style={{ margin: 0, fontSize: 16 }}>User Management</h3>
+          </div>
+          <div style={{ position: 'relative' }}>
+             <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+             <input 
+               type="text" 
+               placeholder="Cari Username/Email..." 
+               className="form-input" 
+               style={{ paddingLeft: 32, fontSize: 12, height: 32, width: 250 }}
+               value={userSearch}
+               onChange={e => setUserSearch(e.target.value)}
+             />
+          </div>
+        </div>
+
+        <div className="table-wrap">
+          <table style={{ width: '100%' }}>
+            <thead>
+              <tr>
+                <th>User Details</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th style={{ textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredUsers.length === 0 ? (
+                <tr>
+                   <td colSpan={4} style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
+                     Tidak ada user ditemukan.
+                   </td>
+                </tr>
+              ) : (
+                filteredUsers.map(u => (
+                  <tr key={u.id}>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{u.display_name || u.username}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u.email || 'No email registered'}</div>
+                    </td>
+                    <td>
+                       <span className={`badge ${u.is_admin ? 'badge-income' : ''}`} style={{ fontSize: 10 }}>
+                         {u.is_admin ? 'ADMIN' : 'USER'}
+                       </span>
+                    </td>
+                    <td>
+                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                         {u.is_disabled ? (
+                           <span style={{ color: 'var(--red)', fontWeight: 700 }}>DISABLED</span>
+                         ) : (
+                           <span style={{ color: 'var(--green)', fontWeight: 700 }}>ACTIVE</span>
+                         )}
+                       </div>
+                    </td>
+                    <td>
+                       <div className="flex gap-2" style={{ justifyContent: 'flex-end' }}>
+                          <button 
+                            className="btn btn-ghost btn-sm" 
+                            style={{ color: u.is_disabled ? 'var(--green)' : 'var(--red)', padding: '4px 8px' }}
+                            onClick={() => toggleUserStatus(u.id, !!u.is_disabled)}
+                            title={u.is_disabled ? "Aktifkan" : "Disable"}
+                          >
+                            {u.is_disabled ? <UserCheck size={16} /> : <ShieldOff size={16} />}
+                          </button>
+                          <button 
+                            className="btn btn-ghost btn-sm" 
+                            style={{ color: 'var(--red)', padding: '4px 8px' }}
+                            onClick={() => deleteUserRecord(u.id)}
+                            title="Hapus Profile"
+                            disabled={u.is_admin} // Don't allow deleting self/other admins via UI easily
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                       </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
