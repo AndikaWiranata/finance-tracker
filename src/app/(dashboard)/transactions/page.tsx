@@ -38,15 +38,15 @@ export default function TransactionsPage() {
   const [filterType, setFilterType] = useState<string>('all')
   const [filterCategory, setFilterCategory] = useState<string>('all')
   const [filterPeriod, setFilterPeriod] = useState<string>('today')
-  const [customStart, setCustomStart] = useState<string>(getLocalDateISO())
-  const [customEnd, setCustomEnd] = useState<string>(getLocalDateISO())
+  const [customStart, setCustomStart] = useState<string>('')
+  const [customEnd, setCustomEnd] = useState<string>('')
   const [form, setForm] = useState({
     account_id: '',
     type: 'expense' as 'income' | 'expense',
     amount: '',
     category: 'Food',
     note: '',
-    date: getLocalDateISO(),
+    date: '',
   })
   const [userCategories, setUserCategories] = useState<{name: string, type: string}[]>([])
   const [saving, setSaving] = useState(false)
@@ -58,9 +58,17 @@ export default function TransactionsPage() {
     from_id: '',
     to_id: '',
     amount: '',
-    date: getLocalDateISO(),
+    date: '',
     note: ''
   })
+
+  useEffect(() => {
+    const today = getLocalDateISO()
+    setCustomStart(today)
+    setCustomEnd(today)
+    setForm(f => ({ ...f, date: today }))
+    setTransferForm(tf => ({ ...tf, date: today }))
+  }, [])
 
   async function load() {
     if (!user) return

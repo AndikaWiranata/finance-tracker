@@ -43,9 +43,13 @@ export default function DebtsPage() {
     amount: '',
     account_id: '',
     note: '',
-    date: getLocalDateISO(),
+    date: '',
     sync_to_ledger: true
   })
+
+  useEffect(() => {
+    setPaymentForm(f => ({ ...f, date: getLocalDateISO() }))
+  }, [])
 
   async function loadData() {
     if (!user) return

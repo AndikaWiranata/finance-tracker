@@ -35,9 +35,13 @@ export default function RecurringPage() {
     amount: '',
     category: 'Bills',
     frequency: 'monthly',
-    next_date: getLocalDateISO(),
+    next_date: '',
     note: ''
   })
+
+  useEffect(() => {
+    setForm(f => ({ ...f, next_date: getLocalDateISO() }))
+  }, [])
 
   async function load() {
     if (!user) return
