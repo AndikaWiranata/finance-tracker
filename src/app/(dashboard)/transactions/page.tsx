@@ -7,6 +7,7 @@ import { Account, Transaction } from '@/types'
 import { Plus, X, ArrowLeftRight, Filter, Pencil, Trash2, AlertTriangle, RefreshCw } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import Link from 'next/link'
+import { getLocalDateISO } from '@/lib/date'
 
 function formatIDR(n: number) {
   // If no decimals needed, keep it 0. If it has decimals, show up to 2 for IDR conversion.
@@ -43,7 +44,7 @@ export default function TransactionsPage() {
     amount: '',
     category: 'Food',
     note: '',
-    date: new Date().toISOString().slice(0, 10),
+    date: getLocalDateISO(),
   })
   const [userCategories, setUserCategories] = useState<{name: string, type: string}[]>([])
   const [saving, setSaving] = useState(false)
@@ -55,7 +56,7 @@ export default function TransactionsPage() {
     from_id: '',
     to_id: '',
     amount: '',
-    date: new Date().toISOString().slice(0, 10),
+    date: getLocalDateISO(),
     note: ''
   })
 
@@ -95,21 +96,25 @@ export default function TransactionsPage() {
     // Period Filtering
     let [start, end] = ['', '']
     const today = new Date()
-    const nowStr = today.toISOString().slice(0, 10)
+    const nowStr = getLocalDateISO()
 
     if (filterPeriod === 'today') {
       [start, end] = [nowStr, nowStr]
     } else if (filterPeriod === 'this_week') {
       const weekStart = new Date(today.setDate(today.getDate() - today.getDay()))
-      start = weekStart.toISOString().slice(0, 10)
+      const wsY = weekStart.getFullYear()
+      const wsM = String(weekStart.getMonth() + 1).padStart(2, '0')
+      const wsD = String(weekStart.getDate()).padStart(2, '0')
+      start = `${wsY}-${wsM}-${wsD}`
     } else if (filterPeriod === 'this_month') {
-      start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10)
+      start = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`
     } else if (filterPeriod === 'last_month') {
       const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1)
-      start = lastMonth.toISOString().slice(0, 10)
-      end = new Date(today.getFullYear(), today.getMonth(), 0).toISOString().slice(0, 10)
+      start = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}-01`
+      const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 0)
+      end = `${lastDayOfMonth.getFullYear()}-${String(lastDayOfMonth.getMonth() + 1).padStart(2, '0')}-${String(lastDayOfMonth.getDate()).padStart(2, '0')}`
     } else if (filterPeriod === 'this_year') {
-      start = new Date(today.getFullYear(), 0, 1).toISOString().slice(0, 10)
+      start = `${today.getFullYear()}-01-01`
     }
 
     const matchStart = !start || t.date >= start
@@ -195,7 +200,7 @@ export default function TransactionsPage() {
       amount: '',
       category: 'Food',
       note: '',
-      date: new Date().toISOString().slice(0, 10),
+      date: getLocalDateISO(),
     })
     setEditId(null)
     setShowModal(false)
@@ -315,7 +320,7 @@ export default function TransactionsPage() {
               amount: '',
               category: 'Food',
               note: '',
-              date: new Date().toISOString().slice(0, 10),
+              date: getLocalDateISO(),
             })
             setShowModal(true)
           }}>

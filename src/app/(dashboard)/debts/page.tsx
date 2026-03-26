@@ -6,6 +6,7 @@ import { formatNumberInput, parseNumberInput } from '@/lib/currency'
 import { Account } from '@/types'
 import { Plus, X, Landmark, ArrowRight, Trash2, Calendar, User, DollarSign, AlertCircle, CheckCircle2, History } from 'lucide-react'
 import { toast } from 'react-hot-toast'
+import { getLocalDateISO } from '@/lib/date'
 
 function formatIDR(n: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
@@ -42,7 +43,7 @@ export default function DebtsPage() {
     amount: '',
     account_id: '',
     note: '',
-    date: new Date().toISOString().slice(0, 10),
+    date: getLocalDateISO(),
     sync_to_ledger: true
   })
 

@@ -6,6 +6,7 @@ import { convertToIDR, formatNumberInput, parseNumberInput } from '@/lib/currenc
 import { Account, ForexAccount } from '@/types'
 import { Plus, X, Edit2, Check, ArrowDownUp } from 'lucide-react'
 import { toast } from 'react-hot-toast'
+import { getLocalDateISO } from '@/lib/date'
 
 type ForexWithAccount = ForexAccount & { accountName: string }
 
@@ -94,7 +95,7 @@ export default function ForexPage() {
         amount: idrDelta,
         category: delta > 0 ? 'Investment' : 'Other',
         note: `Forex Adjust: ${updatingFx.currency_pair} (${delta > 0 ? '+' : '-'}${Math.abs(delta).toFixed(2)} ${base})`,
-        date: new Date().toISOString().slice(0, 10)
+        date: getLocalDateISO()
       })
       
       // Also update the main account balance if we record it as a transaction

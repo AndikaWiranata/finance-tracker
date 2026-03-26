@@ -1,7 +1,8 @@
 import { SupabaseClient } from '@supabase/supabase-js'
+import { getLocalDateISO } from './date'
 
 export async function processRecurringTransactions(supabase: SupabaseClient, userId: string) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = getLocalDateISO()
 
   // 1. Fetch due recurring transactions
   const { data: recurring, error } = await supabase

@@ -7,6 +7,7 @@ import { formatNumberInput, parseNumberInput } from '@/lib/currency'
 import { Account, CryptoWallet } from '@/types'
 import { Bitcoin, Plus, X, Edit2, Check } from 'lucide-react'
 import { toast } from 'react-hot-toast'
+import { getLocalDateISO } from '@/lib/date'
 
 type WalletWithAccount = CryptoWallet & {
   accountName: string
@@ -121,7 +122,7 @@ export default function CryptoPage() {
         amount: Math.abs(idrDelta),
         category: delta > 0 ? 'Investment' : 'Other',
         note: `Crypto Adjust: ${updatingWl.coin_symbol} (${delta > 0 ? '+' : '-'}${Math.abs(delta).toFixed(8)} ${updatingWl.coin_symbol})`,
-        date: new Date().toISOString().slice(0, 10)
+        date: getLocalDateISO()
       })
 
       // Update main account fiat balance

@@ -6,6 +6,7 @@ import { formatNumberInput, parseNumberInput } from '@/lib/currency'
 import { Account } from '@/types'
 import { Plus, X, Target, TrendingUp, Calendar, Trash2, DollarSign, CheckCircle, AlertCircle, Rocket, PartyPopper } from 'lucide-react'
 import { toast } from 'react-hot-toast'
+import { getLocalDateISO } from '@/lib/date'
 
 function formatIDR(n: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
@@ -121,7 +122,7 @@ export default function GoalsPage() {
 
     // 3. Sync to Ledger (Optional - Double Sync)
     if (saveForm.sync_to_ledger && saveForm.account_id && saveForm.target_account_id) {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = getLocalDateISO()
       const { error: tError } = await supabase.rpc('transfer_funds', {
         from_acc_id: parseInt(saveForm.account_id),
         to_acc_id: parseInt(saveForm.target_account_id),

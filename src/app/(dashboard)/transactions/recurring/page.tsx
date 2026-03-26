@@ -7,6 +7,7 @@ import { Account } from '@/types'
 import { Plus, X, Calendar, RefreshCw, Trash2, ArrowLeft, AlertCircle, Clock } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
+import { getLocalDateISO } from '@/lib/date'
 
 function formatIDR(n: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
@@ -34,7 +35,7 @@ export default function RecurringPage() {
     amount: '',
     category: 'Bills',
     frequency: 'monthly',
-    next_date: new Date().toISOString().slice(0, 10),
+    next_date: getLocalDateISO(),
     note: ''
   })
 

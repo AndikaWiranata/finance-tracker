@@ -12,6 +12,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, AreaChart, Area, XAx
 import Link from 'next/link'
 import { processRecurringTransactions } from '@/lib/recurring'
 import { toast } from 'react-hot-toast'
+import { getLocalDateISO, getPreviousDateISO } from '@/lib/date'
 
 const TYPE_CONFIG: Record<string, { color: string; icon: string; bg: string }> = {
   bank:    { color: '#3b82f6', icon: '🏦', bg: 'rgba(59,130,246,0.15)' },
@@ -56,7 +57,7 @@ export default function DashboardPage() {
         console.error('Error processing recurring:', err)
       }
 
-      const todayStr = new Date().toISOString().slice(0, 10)
+      const todayStr = getLocalDateISO()
       const [{ data: accs }, { data: txns }, { data: todayTx }, { data: cryptoW }, { data: forexA }, { data: stockP }, { data: historyTx }, { data: snapshots }] = await Promise.all([
         supabase.from('accounts').select('*').eq('user_id', user.id),
         supabase.from('transactions')
@@ -227,7 +228,7 @@ export default function DashboardPage() {
 
       // 4. Force Render: If still only 1 point (no history), add a dummy 'Yesterday' point
       if (finalHistory.length === 1 && total > 0) {
-          const yesterday = new Date(new Date().getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0,10)
+          const yesterday = getPreviousDateISO(1)
           finalHistory.unshift({
               date: new Date(yesterday).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
               value: finalHistory[0].value,
