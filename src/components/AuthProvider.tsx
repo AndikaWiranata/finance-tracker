@@ -12,7 +12,9 @@ type AuthContextType = {
     display_name: string | null
     avatar_url: string | null
     username: string | null
+    base_currency: string | null
   } | null
+  refreshProfile: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType>({ 
@@ -20,7 +22,8 @@ const AuthContext = createContext<AuthContextType>({
   user: null, 
   loading: true, 
   isAdmin: false,
-  profile: null
+  profile: null,
+  refreshProfile: async () => {}
 })
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -36,18 +39,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null)
       return
     }
-    const { data } = await supabase
+    
+    // First attempt with all columns
+    let { data, error } = await supabase
       .from('profiles')
-      .select('is_admin, display_name, avatar_url, username')
+      .select('is_admin, display_name, avatar_url, username, base_currency')
       .eq('id', u.id)
       .single()
     
-    setIsAdmin(!!data?.is_admin)
-    setProfile({
-      display_name: data?.display_name || null,
-      avatar_url: data?.avatar_url || null,
-      username: data?.username || null
-    })
+    // Fallback in case base_currency hasn't been added to SQL yet
+    if (error) {
+      console.warn('Profile fetch failed, trying fallback...', error.message)
+      const { data: fallback, error: fallbackError } = await supabase
+        .from('profiles')
+        .select('is_admin, display_name, avatar_url, username')
+        .eq('id', u.id)
+        .single()
+      
+      if (!fallbackError) {
+        data = fallback as any
+      }
+    }
+
+    if (data) {
+      setIsAdmin(!!data.is_admin)
+      setProfile({
+        display_name: data.display_name || null,
+        avatar_url: data.avatar_url || null,
+        username: data.username || null,
+        base_currency: data.base_currency || 'IDR'
+      })
+    }
   }
 
   useEffect(() => {
@@ -68,8 +90,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe()
   }, [])
 
+  const refreshProfile = async () => {
+    if (user) await fetchUserProfile(user)
+  }
+
   return (
-    <AuthContext.Provider value={{ session, user, loading, isAdmin, profile }}>
+    <AuthContext.Provider value={{ session, user, loading, isAdmin, profile, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   )

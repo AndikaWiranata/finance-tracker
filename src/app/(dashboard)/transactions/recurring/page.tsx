@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
-import { formatNumberInput, parseNumberInput } from '@/lib/currency'
+import { formatCurrency, formatNumberInput, parseNumberInput, getFiatRates, convertToBase } from '@/lib/currency'
 import CurrencyInput from '@/components/CurrencyInput'
 import { Account } from '@/types'
 import { Plus, X, Calendar, RefreshCw, Trash2, ArrowLeft, AlertCircle, Clock } from 'lucide-react'
@@ -10,9 +10,7 @@ import { toast } from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
 import { getLocalDateISO } from '@/lib/date'
 
-function formatIDR(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
-}
+// Replaced local formatIDR with global formatCurrency
 
 const LIQUID_TYPES = ['bank', 'cash', 'ewallet']
 const CATEGORIES = {
@@ -22,7 +20,9 @@ const CATEGORIES = {
 
 export default function RecurringPage() {
   const router = useRouter()
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
+  const [exchangeRate, setExchangeRate] = useState(1)
+  const baseCurrency = profile?.base_currency || 'IDR'
   const [loading, setLoading] = useState(true)
   const [recurring, setRecurring] = useState<any[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -46,6 +46,18 @@ export default function RecurringPage() {
 
   async function load() {
     if (!user) return
+    
+    if (baseCurrency !== 'IDR') {
+      const rates = await getFiatRates()
+      if (rates) {
+        const idrToUsd = 1 / (rates['IDR'] || 15500)
+        const usdToBase = rates[baseCurrency] || 1
+        setExchangeRate(idrToUsd * usdToBase)
+      }
+    } else {
+      setExchangeRate(1)
+    }
+
     const [{ data: rec }, { data: accs }] = await Promise.all([
       supabase.from('recurring_transactions')
         .select('*, accounts(name)')
@@ -63,22 +75,23 @@ export default function RecurringPage() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [user])
+  useEffect(() => { load() }, [user, baseCurrency])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (!user) return
     
-    const amount = parseFloat(parseNumberInput(form.amount)) || 0
-    if (amount <= 0) return toast.error('Jumlah harus lebih dari 0')
-    if (!form.account_id) return toast.error('Pilih akun terlebih dahulu')
+    const amountInBase = parseFloat(parseNumberInput(form.amount, baseCurrency)) || 0
+    if (amountInBase <= 0) return toast.error('Amount must be greater than 0')
+    const amountIDR = await convertToBase(amountInBase, baseCurrency, 'IDR')
+    if (!form.account_id) return toast.error('Please select an account first')
 
     setSaving(true)
     const { error } = await supabase.from('recurring_transactions').insert({
       user_id: user.id,
       account_id: parseInt(form.account_id),
       type: form.type,
-      amount,
+      amount: amountIDR,
       category: form.category,
       frequency: form.frequency,
       next_date: form.next_date,
@@ -87,9 +100,9 @@ export default function RecurringPage() {
     })
 
     if (error) {
-      toast.error('Gagal menyimpan: ' + error.message)
+      toast.error('Failed to save: ' + error.message)
     } else {
-      toast.success('Transaksi rutin berhasil ditambahkan!')
+      toast.success('Recurring transaction scheduled!')
       setShowModal(false)
       load()
     }
@@ -107,7 +120,7 @@ export default function RecurringPage() {
     if (!deleteId) return
     const { error } = await supabase.from('recurring_transactions').delete().eq('id', deleteId)
     if (!error) {
-      toast.success('Dihapus')
+      toast.success('Deleted')
       setDeleteId(null)
       load()
     }
@@ -120,13 +133,13 @@ export default function RecurringPage() {
       <div className="flex-between mb-8">
         <div>
           <button onClick={() => router.back()} className="btn btn-ghost btn-sm mb-2" style={{ padding: '8px 12px', gap: 8 }}>
-            <ArrowLeft size={18} /> Kembali
+            <ArrowLeft size={18} /> Back
           </button>
-          <h1 style={{ fontSize: 32, fontWeight: 800 }}>Transaksi Rutin</h1>
-          <p style={{ color: 'var(--text-muted)' }}>Atur pengeluaran & pemasukan otomatis kamu</p>
+          <h1 style={{ fontSize: 32, fontWeight: 800 }}>Recurring Transactions</h1>
+          <p style={{ color: 'var(--text-muted)' }}>Set up your automatic income & expenses</p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          <Plus size={20} /> Tambah Jadwal
+          <Plus size={20} /> Add Schedule
         </button>
       </div>
 
@@ -134,8 +147,8 @@ export default function RecurringPage() {
         {recurring.length === 0 ? (
           <div className="card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '60px 20px' }}>
             <RefreshCw size={48} color="var(--text-muted)" style={{ margin: '0 auto 16px', opacity: 0.3 }} />
-            <h3 style={{ fontSize: 18, color: 'var(--text-muted)' }}>Belum ada transaksi rutin</h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Tambahkan jadwal untuk memproses tagihan otomatis</p>
+            <h3 style={{ fontSize: 18, color: 'var(--text-muted)' }}>No recurring transactions yet</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Add a schedule to process automatic bills</p>
           </div>
         ) : (
           recurring.map(item => (
@@ -165,7 +178,7 @@ export default function RecurringPage() {
               </div>
 
               <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>
-                {formatIDR(item.amount)}
+                {formatCurrency(item.amount * exchangeRate, baseCurrency)}
               </div>
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 12 }}>
                 {item.category}
@@ -175,10 +188,10 @@ export default function RecurringPage() {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-muted)' }}>
-                  <Calendar size={14} /> Frekuensi: <span style={{ color: 'var(--text-primary)', fontWeight: 600, textTransform: 'capitalize' }}>{item.frequency}</span>
+                  <Calendar size={14} /> Frequency: <span style={{ color: 'var(--text-primary)', fontWeight: 600, textTransform: 'capitalize' }}>{item.frequency}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-muted)' }}>
-                  <Clock size={14} /> Bayar Berikutnya: <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{item.next_date}</span>
+                  <Clock size={14} /> Next Payment: <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{item.next_date}</span>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, fontStyle: 'italic' }}>
                    Via: {item.accounts?.name}
@@ -194,38 +207,39 @@ export default function RecurringPage() {
         <div className="modal-overlay">
           <div className="modal-content animate-in" style={{ maxWidth: 500 }}>
             <div className="flex-between mb-6">
-              <h2 style={{ fontSize: 24, fontWeight: 800 }}>Jadwalkan Transaksi</h2>
+              <h2 style={{ fontSize: 24, fontWeight: 800 }}>Schedule Transaction</h2>
               <button className="btn-icon" onClick={() => setShowModal(false)}><X /></button>
             </div>
 
             <form onSubmit={submit}>
               <div className="form-group">
-                <label className="form-label">Tipe Transaksi</label>
+                <label className="form-label">Transaction Type</label>
                 <div className="flex gap-4">
                    <button 
                     type="button"
                     className={`btn flex-1 ${form.type === 'expense' ? 'btn-danger' : 'btn-ghost'}`}
                     onClick={() => setForm({...form, type: 'expense', category: 'Bills'})}
-                   >Pengeluaran</button>
+                   >Expense</button>
                    <button 
                     type="button"
                     className={`btn flex-1 ${form.type === 'income' ? 'btn-success' : 'btn-ghost'}`}
                     onClick={() => setForm({...form, type: 'income', category: 'Salary'})}
-                   >Pemasukan</button>
+                   >Income</button>
                 </div>
               </div>
 
               <div className="grid-2">
                 <div className="form-group">
-                  <label className="form-label">Jumlah (Rp)</label>
+                  <label className="form-label">Amount</label>
                   <CurrencyInput 
                     className="form-input" required
+                    currency={baseCurrency}
                     value={form.amount}
                     onValueChange={val => setForm({...form, amount: val})}
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Kategori</label>
+                  <label className="form-label">Category</label>
                   <select 
                     className="form-input" value={form.category}
                     onChange={e => setForm({...form, category: e.target.value})}
@@ -236,32 +250,32 @@ export default function RecurringPage() {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Sumber Akun</label>
+                <label className="form-label">Source Account</label>
                 <select 
                   className="form-input" value={form.account_id}
                   onChange={e => setForm({...form, account_id: e.target.value})}
                 >
                   {accounts.filter(a => LIQUID_TYPES.includes(a.type)).map(a => (
-                    <option key={a.id} value={a.id}>{a.name} ({formatIDR(Number(a.balance))})</option>
+                    <option key={a.id} value={a.id}>{a.name} ({formatCurrency(Number(a.balance) * exchangeRate, baseCurrency)})</option>
                   ))}
                 </select>
               </div>
 
               <div className="grid-2">
                 <div className="form-group">
-                  <label className="form-label">Frekuensi</label>
+                  <label className="form-label">Frequency</label>
                   <select 
                     className="form-input" value={form.frequency}
                     onChange={e => setForm({...form, frequency: e.target.value})}
                   >
-                    <option value="daily">Harian</option>
-                    <option value="weekly">Mingguan</option>
-                    <option value="monthly">Bulanan</option>
-                    <option value="yearly">Tahunan</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="yearly">Yearly</option>
                   </select>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Mulai Tanggal</label>
+                  <label className="form-label">Start Date</label>
                   <input 
                     type="date" className="form-input" required
                     value={form.next_date}
@@ -271,16 +285,16 @@ export default function RecurringPage() {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Catatan (Opsional)</label>
+                <label className="form-label">Note (Optional)</label>
                 <input 
-                  type="text" className="form-input" placeholder="Misal: Netflix, Listrik, dsb"
+                  type="text" className="form-input" placeholder="e.g. Netflix, Electricity, etc."
                   value={form.note}
                   onChange={e => setForm({...form, note: e.target.value})}
                 />
               </div>
 
               <button type="submit" className="btn btn-primary w-full" disabled={saving}>
-                {saving ? <RefreshCw className="spinner" /> : 'Mulai Jadwalkan'}
+                {saving ? <RefreshCw className="spinner" /> : 'Start Scheduling'}
               </button>
             </form>
           </div>
@@ -292,11 +306,11 @@ export default function RecurringPage() {
         <div className="modal-overlay">
           <div className="modal-content animate-in" style={{ maxWidth: 400, textAlign: 'center' }}>
             <AlertCircle size={48} color="var(--red)" style={{ margin: '0 auto 16px' }} />
-            <h2 style={{ fontSize: 20, marginBottom: 12 }}>Hapus Jadwal?</h2>
-            <p style={{ color: 'var(--text-muted)', marginBottom: 24 }}>Transaksi rutin ini akan dihentikan selamanya.</p>
+            <h2 style={{ fontSize: 20, marginBottom: 12 }}>Delete Schedule?</h2>
+            <p style={{ color: 'var(--text-muted)', marginBottom: 24 }}>This recurring transaction will be stopped forever.</p>
             <div className="flex gap-4">
-              <button className="btn btn-ghost flex-1" onClick={() => setDeleteId(null)}>Batal</button>
-              <button className="btn btn-danger flex-1" onClick={remove}>Hapus</button>
+              <button className="btn btn-ghost flex-1" onClick={() => setDeleteId(null)}>Cancel</button>
+              <button className="btn btn-danger flex-1" onClick={remove}>Delete</button>
             </div>
           </div>
         </div>

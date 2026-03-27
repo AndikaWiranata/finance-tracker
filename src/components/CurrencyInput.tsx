@@ -5,11 +5,17 @@ import { formatNumberInput } from '@/lib/currency'
 interface CurrencyInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
   value: string
   onValueChange: (value: string) => void
+  currency?: string
 }
 
-export default function CurrencyInput({ value, onValueChange, ...props }: CurrencyInputProps) {
+export default function CurrencyInput({ value, onValueChange, currency = 'IDR', ...props }: CurrencyInputProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const cursorPosition = useRef<number | null>(null)
+
+  const isIDR = currency === 'IDR'
+  const decimalSep = isIDR ? ',' : '.'
+  const thousandSep = isIDR ? '.' : ','
+  const symbol = currency === 'IDR' ? 'Rp' : (currency === 'USD' ? '$' : currency)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const el = e.target
@@ -17,9 +23,10 @@ export default function CurrencyInput({ value, onValueChange, ...props }: Curren
     const selectionStart = el.selectionStart || 0
 
     // Count how many non-separator characters are before the cursor
-    const nonSeparatorsBeforeCursor = originalValue.slice(0, selectionStart).replace(/\./g, '').length
+    const stripRegex = new RegExp(`\\${thousandSep}`, 'g')
+    const nonSeparatorsBeforeCursor = originalValue.slice(0, selectionStart).replace(stripRegex, '').length
 
-    const formattedValue = formatNumberInput(originalValue)
+    const formattedValue = formatNumberInput(originalValue, currency)
     
     // Store the count of non-separators to restore later
     cursorPosition.current = nonSeparatorsBeforeCursor
@@ -37,7 +44,7 @@ export default function CurrencyInput({ value, onValueChange, ...props }: Curren
       
       // Find the position in formatted value that matches the non-separator count
       for (let i = 0; i < targetValue.length; i++) {
-        if (targetValue[i] !== '.') {
+        if (targetValue[i] !== thousandSep) {
           nonSeparatorCount++
         }
         if (nonSeparatorCount === cursorPosition.current) {
@@ -50,15 +57,33 @@ export default function CurrencyInput({ value, onValueChange, ...props }: Curren
       el.setSelectionRange(newPos, newPos)
       cursorPosition.current = null
     }
-  }, [value])
+  }, [value, thousandSep])
 
   return (
-    <input
-      {...props}
-      ref={inputRef}
-      type="text"
-      value={value}
-      onChange={handleChange}
-    />
+    <div style={{ position: 'relative', width: '100%' }}>
+      <span style={{ 
+        position: 'absolute', 
+        left: 12, 
+        top: '50%', 
+        transform: 'translateY(-50%)', 
+        color: 'var(--text-muted)', 
+        fontSize: 14,
+        fontWeight: 600,
+        pointerEvents: 'none'
+      }}>
+        {symbol}
+      </span>
+      <input
+        {...props}
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={handleChange}
+        style={{ 
+          ...props.style,
+          paddingLeft: symbol.length > 2 ? 45 : 36 
+        }}
+      />
+    </div>
   )
 }

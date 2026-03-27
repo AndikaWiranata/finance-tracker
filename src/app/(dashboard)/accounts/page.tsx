@@ -2,10 +2,11 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
-import { convertToIDR, formatNumberInput, parseNumberInput } from '@/lib/currency'
+import { convertToIDR, formatCurrency, formatNumberInput, getFiatRates, parseNumberInput } from '@/lib/currency'
 import { Account, AccountType } from '@/types'
 import { Plus, X, Wallet, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
+import CurrencyInput from '@/components/CurrencyInput'
 
 const TYPE_CONFIG: Record<AccountType, { color: string; icon: string; bg: string }> = {
   bank:    { color: '#3b82f6', icon: '🏦', bg: 'rgba(59,130,246,0.15)' },
@@ -16,9 +17,7 @@ const TYPE_CONFIG: Record<AccountType, { color: string; icon: string; bg: string
   stock:   { color: '#ec4899', icon: '📈', bg: 'rgba(236,72,153,0.15)' },
 }
 
-function formatIDR(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
-}
+// Removed local formatIDR to use lib/currency formatCurrency
 
 const CURRENCIES = ['IDR', 'USD', 'EUR', 'GBP', 'ETH', 'BTC', 'USDT']
 
@@ -30,11 +29,24 @@ export default function AccountsPage() {
   const [saving, setSaving] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
 
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
+  const [exchangeRate, setExchangeRate] = useState(1)
+  const baseCurrency = profile?.base_currency || 'IDR'
   const [rates, setRates] = useState<Record<number, number>>({})
 
   async function load() {
     if (!user) return
+    if (baseCurrency !== 'IDR') {
+      const rates = await getFiatRates()
+      if (rates) {
+        const idrToUsd = 1 / (rates['IDR'] || 15500)
+        const usdToBase = rates[baseCurrency] || 1
+        setExchangeRate(idrToUsd * usdToBase)
+      }
+    } else {
+      setExchangeRate(1)
+    }
+
     const [{ data: accs }, { data: cryptoW }, { data: forexA }, { data: stockP }] = await Promise.all([
       supabase.from('accounts').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('crypto_wallets').select('*').eq('user_id', user.id),
@@ -88,7 +100,7 @@ export default function AccountsPage() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [user])
+  useEffect(() => { load() }, [user, baseCurrency])
 
   async function submit(e: React.FormEvent) {
     if (!user) return
@@ -97,7 +109,7 @@ export default function AccountsPage() {
       toast.error('Account name is required')
       return
     }
-    const balance = parseFloat(parseNumberInput(form.balance)) || 0
+    const balance = parseFloat(parseNumberInput(form.balance, form.currency)) || 0
     if (!editId && balance < 0) {
       toast.error('Initial balance cannot be negative')
       return
@@ -110,7 +122,7 @@ export default function AccountsPage() {
       name: form.name,
       type: form.type,
       currency: form.currency,
-      balance: parseFloat(parseNumberInput(form.balance)) || 0,
+      balance: balance,
     }
 
     if (editId) {
@@ -185,7 +197,7 @@ export default function AccountsPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Accounts</h1>
-          <p className="page-subtitle">{accounts.length} accounts · Total {formatIDR(accounts.reduce((s, a) => s + Number((a as any).liveBalanceIDR || 0), 0))}</p>
+          <p className="page-subtitle">{accounts.length} accounts · Total {formatCurrency(accounts.reduce((s, a) => s + Number((a as any).liveBalanceIDR || 0), 0) * exchangeRate, baseCurrency)}</p>
         </div>
         <button className="btn btn-primary" onClick={() => { setEditId(null); setForm({ name: '', type: 'bank', currency: 'IDR', balance: '' }); setShowModal(true); }}>
           <Plus size={16} /> Add Account
@@ -210,7 +222,7 @@ export default function AccountsPage() {
                 <span>{cfg.icon}</span>
                 <span style={{ textTransform: 'capitalize' }}>{type}</span>
                 <span style={{ fontWeight: 400, fontSize: 13, color: 'var(--text-muted)', marginLeft: 4 }}>
-                  ({items.length}) · {formatIDR(total)}
+                  ({items.length}) · {formatCurrency(total * exchangeRate, baseCurrency)}
                 </span>
               </div>
               <div className="grid-3">
@@ -239,7 +251,7 @@ export default function AccountsPage() {
                     </div>
                     <div className="account-name">{acc.name}</div>
                     <div className="account-balance">
-                      {formatIDR((acc as any).liveBalanceIDR)}
+                      {formatCurrency(Number((acc as any).liveBalanceIDR) * exchangeRate, baseCurrency)}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>{acc.currency}</div>
                   </div>
@@ -289,8 +301,9 @@ export default function AccountsPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">Initial Balance</label>
-                <input className="form-input" type="text" placeholder="0"
-                  value={form.balance} onChange={e => setForm(f => ({ ...f, balance: formatNumberInput(e.target.value) }))} />
+                <CurrencyInput className="form-input" required 
+                  currency={form.currency}
+                  value={form.balance} onValueChange={val => setForm(f => ({ ...f, balance: val }))} />
               </div>
               <div className="flex gap-3 mt-4" style={{ justifyContent: 'flex-end' }}>
                 <button type="button" className="btn btn-ghost" onClick={() => { setShowModal(false); setEditId(null); }}>Cancel</button>

@@ -6,14 +6,16 @@ import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import TradingViewWidget from '@/components/TradingViewWidget'
 
-function formatIDR(n: number) {
-    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
-}
+import { formatCurrency, getFiatRates } from '@/lib/currency'
+
+// Replaced local formatIDR with global formatCurrency
 
 export default function CryptoDetailPage() {
     const { symbol } = useParams()
     const router = useRouter()
-    const { user } = useAuth()
+    const { user, profile } = useAuth()
+    const [exchangeRate, setExchangeRate] = useState(1)
+    const baseCurrency = profile?.base_currency || 'IDR'
     const [loading, setLoading] = useState(true)
     const [assetData, setAssetData] = useState<any>(null)
     const [totalBalance, setTotalBalance] = useState(0)
@@ -22,6 +24,17 @@ export default function CryptoDetailPage() {
     useEffect(() => {
         async function fetchDetails() {
             if (!user || !symbol) return
+
+            if (baseCurrency !== 'IDR') {
+               const frates = await getFiatRates()
+               if (frates) {
+                   const idrToUsd = 1 / (frates['IDR'] || 15500)
+                   const usdToBase = frates[baseCurrency] || 1
+                   setExchangeRate(idrToUsd * usdToBase)
+               }
+            } else {
+               setExchangeRate(1)
+            }
 
             const { data: wallets } = await supabase
                 .from('crypto_wallets')
@@ -49,7 +62,7 @@ export default function CryptoDetailPage() {
         }
 
         fetchDetails()
-    }, [user, symbol])
+    }, [user, symbol, baseCurrency])
 
     if (loading || !symbol) return <div className="spinner" />
 
@@ -83,7 +96,7 @@ export default function CryptoDetailPage() {
                         <h1 style={{ fontSize: 32, fontWeight: 800, margin: 0 }}>{coinSymbol} <span style={{ color: 'var(--text-muted)', fontSize: 18, fontWeight: 500 }}>USDT</span></h1>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
                             <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>
-                                ${livePrice?.price_usd?.toLocaleString() || '---'}
+                                {livePrice?.price_idr ? formatCurrency(livePrice.price_idr * exchangeRate, baseCurrency) : '---'}
                             </div>
                             {livePrice && (
                                 <div style={{
@@ -101,7 +114,7 @@ export default function CryptoDetailPage() {
                 <div className="card" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.05) 100%)', border: '1px solid var(--border)' }}>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Total Saldo Anda</div>
                     <div style={{ fontSize: 22, fontWeight: 800, color: '#f59e0b' }}>{totalBalance.toLocaleString(undefined, { maximumFractionDigits: 8 })} {coinSymbol}</div>
-                    <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>≈ {formatIDR(totalBalance * (livePrice?.price_idr || 0))}</div>
+                    <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>≈ {formatCurrency(totalBalance * (livePrice?.price_idr || 0) * exchangeRate, baseCurrency)}</div>
                 </div>
             </div>
 
@@ -123,7 +136,7 @@ export default function CryptoDetailPage() {
                                 </div>
                                 <div style={{ textAlign: 'right' }}>
                                     <div style={{ fontSize: 14, fontWeight: 700 }}>{Number(w.balance).toLocaleString(undefined, { maximumFractionDigits: 8 })} {coinSymbol}</div>
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{formatIDR(Number(w.balance) * (livePrice?.price_idr || 0))}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{formatCurrency(Number(w.balance) * (livePrice?.price_idr || 0) * exchangeRate, baseCurrency)}</div>
                                 </div>
                             </div>
                         ))}

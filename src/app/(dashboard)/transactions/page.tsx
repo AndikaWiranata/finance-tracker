@@ -1,8 +1,9 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
-import { formatNumberInput, parseNumberInput } from '@/lib/currency'
+import { formatCurrency, formatNumberInput, getFiatRates, parseNumberInput, convertToBase } from '@/lib/currency'
 import CurrencyInput from '@/components/CurrencyInput'
 import { Account, Transaction } from '@/types'
 import { Plus, X, ArrowLeftRight, Filter, Pencil, Trash2, AlertTriangle, RefreshCw } from 'lucide-react'
@@ -10,16 +11,9 @@ import { toast } from 'react-hot-toast'
 import Link from 'next/link'
 import { getLocalDateISO } from '@/lib/date'
 
-function formatIDR(n: number) {
-  // If no decimals needed, keep it 0. If it has decimals, show up to 2 for IDR conversion.
-  return new Intl.NumberFormat('id-ID', { 
-    style: 'currency', 
-    currency: 'IDR', 
-    maximumFractionDigits: n % 1 === 0 ? 0 : 2 
-  }).format(n)
-}
+// Removed local formatIDR to use lib/currency formatCurrency
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 const LIQUID_TYPES = ['bank', 'cash', 'ewallet']
@@ -30,10 +24,22 @@ const CATEGORIES = {
 }
 
 export default function TransactionsPage() {
+  return (
+    <Suspense fallback={<div className="spinner" />}>
+      <TransactionsContent />
+    </Suspense>
+  )
+}
+
+function TransactionsContent() {
+  const searchParams = useSearchParams()
+  const dateParam = searchParams.get('date')
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const [loading, setLoading] = useState(true)
+  const [exchangeRate, setExchangeRate] = useState(1)
+  const baseCurrency = profile?.base_currency || 'IDR'
   const [showModal, setShowModal] = useState(false)
   const [filterAccount, setFilterAccount] = useState<string>('all')
   const [filterType, setFilterType] = useState<string>('all')
@@ -65,14 +71,28 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     const today = getLocalDateISO()
-    setCustomStart(today)
-    setCustomEnd(today)
+    const startValue = dateParam || today
+    setCustomStart(startValue)
+    setCustomEnd(startValue)
+    if (dateParam) setFilterPeriod('custom')
     setForm(f => ({ ...f, date: today }))
     setTransferForm(tf => ({ ...tf, date: today }))
-  }, [])
+  }, [dateParam])
 
   async function load() {
     if (!user) return
+    
+    if (baseCurrency !== 'IDR') {
+      const rates = await getFiatRates()
+      if (rates) {
+        const idrToUsd = 1 / (rates['IDR'] || 15500)
+        const usdToBase = rates[baseCurrency] || 1
+        setExchangeRate(idrToUsd * usdToBase)
+      }
+    } else {
+      setExchangeRate(1)
+    }
+
     const [{ data: txns }, { data: accs }, { data: userCats }] = await Promise.all([
       supabase.from('transactions')
         .select('*, accounts(name, currency)')
@@ -97,7 +117,7 @@ export default function TransactionsPage() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [user])
+  useEffect(() => { load() }, [user, baseCurrency])
 
   const filtered = transactions.filter(t => {
     const matchAccount = filterAccount === 'all' || String(t.account_id) === filterAccount
@@ -139,11 +159,12 @@ export default function TransactionsPage() {
   async function submit(e: React.FormEvent) {
     if (!user) return
     e.preventDefault()
-    const amount = parseFloat(parseNumberInput(form.amount)) || 0
+    const amount = parseFloat(parseNumberInput(form.amount, baseCurrency)) || 0
     if (amount <= 0) {
       toast.error('Amount must be greater than 0')
       return
     }
+    const amountIDR = await convertToBase(amount, baseCurrency, 'IDR')
     if (!form.account_id) {
       toast.error('Please select an account')
       return
@@ -156,7 +177,7 @@ export default function TransactionsPage() {
     if (form.category === 'Other') {
       if (!customCategory.trim()) {
         setSaving(false)
-        return toast.error('Kategori harus diisi')
+        return toast.error('Category is required')
       }
       finalCategory = customCategory.trim()
       // Auto-save to user_categories
@@ -179,14 +200,18 @@ export default function TransactionsPage() {
       await supabase.from('transactions').update({
         account_id: parseInt(form.account_id),
         type: form.type,
-        amount: amount,
+        amount: amountIDR,
         category: finalCategory,
         note: form.note || null,
         date: form.date,
       }).eq('id', editId)
 
       // Apply new balance
-      const newDelta = form.type === 'income' ? amount : -amount
+      // Since amountIDR is in IDR, we assume account balance update should handle the conversion to account's currency if needed
+      // However, usually we update the 'balance' column which is in the account's own currency.
+      // So we need to convert amountIDR to the account's currency.
+      const accAmount = await convertToBase(amountIDR, 'IDR', acc?.currency || 'IDR')
+      const newDelta = form.type === 'income' ? accAmount : -accAmount
       if (acc) await supabase.from('accounts').update({ balance: Number(acc.balance) + newDelta }).eq('id', acc.id)
       toast.success('Transaction updated')
     } else {
@@ -194,14 +219,15 @@ export default function TransactionsPage() {
         account_id: parseInt(form.account_id),
         user_id: user.id,
         type: form.type,
-        amount: amount,
+        amount: amountIDR,
         category: finalCategory,
         note: form.note || null,
         date: form.date,
       })
       
       if (!error && acc) {
-        const delta = form.type === 'income' ? amount : -amount
+        const accAmount = await convertToBase(amountIDR, 'IDR', acc.currency || 'IDR')
+        const delta = form.type === 'income' ? accAmount : -accAmount
         await supabase.from('accounts').update({ balance: Number(acc.balance) + delta }).eq('id', acc.id)
         toast.success('Transaction added')
       }
@@ -227,7 +253,7 @@ export default function TransactionsPage() {
     setForm({
       account_id: String(t.account_id),
       type: t.type,
-      amount: formatNumberInput(t.amount),
+      amount: formatNumberInput(Number(t.amount) * exchangeRate, baseCurrency),
       category: isCustom ? 'Other' : t.category,
       note: t.note || '',
       date: t.date
@@ -274,12 +300,11 @@ export default function TransactionsPage() {
 
     if (!fromAcc || !toAcc) return
 
-    // Use Atomic RPC to handle transfers
     const { error } = await supabase.rpc('transfer_funds', {
       from_acc_id: parseInt(transferForm.from_id),
       to_acc_id: parseInt(transferForm.to_id),
       user_id_val: user.id,
-      amount_val: amount,
+      amount_val: await convertToBase(amount, baseCurrency, fromAcc.currency || 'IDR'),
       note_val: transferForm.note ? ': ' + transferForm.note : '',
       date_val: transferForm.date
     })
@@ -313,7 +338,7 @@ export default function TransactionsPage() {
         </div>
         <div className="flex gap-2">
           <Link href="/transactions/recurring" className="btn btn-ghost" style={{ gap: 8 }}>
-            <RefreshCw size={16} /> Jadwal Rutin
+            <RefreshCw size={16} /> Recurring
           </Link>
           <button className="btn btn-ghost" onClick={() => {
             if (liquidAccounts.length < 2) {
@@ -346,16 +371,16 @@ export default function TransactionsPage() {
       <div className="grid-3 mb-4">
         <div className="card-sm">
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Total Income</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--green)' }}>+{formatIDR(totalIncome)}</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--green)' }}>+{formatCurrency(totalIncome * exchangeRate, baseCurrency)}</div>
         </div>
         <div className="card-sm">
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Total Expense</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--red)' }}>-{formatIDR(totalExpense)}</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--red)' }}>-{formatCurrency(totalExpense * exchangeRate, baseCurrency)}</div>
         </div>
         <div className="card-sm">
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Net</div>
           <div style={{ fontSize: 20, fontWeight: 700, color: totalIncome - totalExpense >= 0 ? 'var(--green)' : 'var(--red)' }}>
-            {formatIDR(totalIncome - totalExpense)}
+            {formatCurrency((totalIncome - totalExpense) * exchangeRate, baseCurrency)}
           </div>
         </div>
       </div>
@@ -426,16 +451,16 @@ export default function TransactionsPage() {
           </div>
 
           <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label" style={{ fontSize: 11 }}>Periode Waktu</label>
+            <label className="form-label" style={{ fontSize: 11 }}>Time Period</label>
             <select className="form-select" style={{ padding: '6px 12px' }}
               value={filterPeriod} onChange={e => setFilterPeriod(e.target.value)}>
-              <option value="all">Semua Riwayat</option>
-              <option value="today">Hari Ini</option>
-              <option value="this_week">Minggu Ini</option>
-              <option value="this_month">Bulan Ini</option>
-              <option value="last_month">Bulan Lalu</option>
-              <option value="this_year">Tahun Ini</option>
-              <option value="custom">Pilih Tanggal...</option>
+              <option value="all">All History</option>
+              <option value="today">Today</option>
+              <option value="this_week">This Week</option>
+              <option value="this_month">This Month</option>
+              <option value="last_month">Last Month</option>
+              <option value="this_year">This Year</option>
+              <option value="custom">Select Date...</option>
             </select>
           </div>
         </div>
@@ -443,12 +468,12 @@ export default function TransactionsPage() {
         {filterPeriod === 'custom' && (
           <div className="animate-in" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
             <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label" style={{ fontSize: 11 }}>Dari Tanggal</label>
+              <label className="form-label" style={{ fontSize: 11 }}>From Date</label>
               <input type="date" className="form-input" style={{ padding: '6px 12px' }}
                 value={customStart} onChange={e => setCustomStart(e.target.value)} />
             </div>
             <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label" style={{ fontSize: 11 }}>Sampai Tanggal</label>
+              <label className="form-label" style={{ fontSize: 11 }}>To Date</label>
               <input type="date" className="form-input" style={{ padding: '6px 12px' }}
                 value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
             </div>
@@ -479,7 +504,7 @@ export default function TransactionsPage() {
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div className={t.type === 'income' ? 'amount-income' : 'amount-expense'} style={{ fontWeight: 700 }}>
-                        {t.type === 'income' ? '+' : '-'}{formatIDR(Number(t.amount))}
+                        {t.type === 'income' ? '+' : '-'}{formatCurrency(Number(t.amount) * exchangeRate, baseCurrency)}
                       </div>
                       <div className="flex gap-2 mt-2" style={{ justifyContent: 'flex-end' }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => startEdit(t)} style={{ padding: 4 }}><Pencil size={13} /></button>
@@ -515,7 +540,7 @@ export default function TransactionsPage() {
                       </td>
                       <td><span className={`badge badge-${t.type}`}>{t.type}</span></td>
                       <td style={{ textAlign: 'right' }} className={t.type === 'income' ? 'amount-income' : 'amount-expense'}>
-                        {t.type === 'income' ? '+' : '-'}{formatIDR(Number(t.amount))}
+                        {t.type === 'income' ? '+' : '-'}{formatCurrency(Number(t.amount) * exchangeRate, baseCurrency)}
                       </td>
                       <td>
                         <div className="flex gap-1" style={{ justifyContent: 'flex-end' }}>
@@ -574,6 +599,7 @@ export default function TransactionsPage() {
                 <div className="form-group">
                   <label className="form-label">Amount</label>
                   <CurrencyInput className="form-input" placeholder="0" required autoFocus
+                    currency={baseCurrency}
                     value={form.amount} onValueChange={val => setForm(f => ({ ...f, amount: val }))} />
                 </div>
                 <div className="form-group">
@@ -634,7 +660,7 @@ export default function TransactionsPage() {
                 <label className="form-label">From Account</label>
                 <select className="form-select" required value={transferForm.from_id}
                   onChange={e => setTransferForm(f => ({ ...f, from_id: e.target.value }))}>
-                  {liquidAccounts.map(a => <option key={a.id} value={a.id}>{a.name} ({formatIDR(Number(a.balance))})</option>)}
+                  {liquidAccounts.map(a => <option key={a.id} value={a.id}>{a.name} ({formatCurrency(Number(a.balance) * exchangeRate, baseCurrency)})</option>)}
                 </select>
               </div>
 
@@ -642,7 +668,7 @@ export default function TransactionsPage() {
                 <label className="form-label">To Account</label>
                 <select className="form-select" required value={transferForm.to_id}
                   onChange={e => setTransferForm(f => ({ ...f, to_id: e.target.value }))}>
-                  {liquidAccounts.map(a => <option key={a.id} value={a.id}>{a.name} ({formatIDR(Number(a.balance))})</option>)}
+                  {liquidAccounts.map(a => <option key={a.id} value={a.id}>{a.name} ({formatCurrency(Number(a.balance) * exchangeRate, baseCurrency)})</option>)}
                 </select>
               </div>
 
@@ -650,6 +676,7 @@ export default function TransactionsPage() {
                 <div className="form-group">
                   <label className="form-label">Amount</label>
                   <CurrencyInput className="form-input" placeholder="0" required autoFocus
+                    currency={baseCurrency}
                     value={transferForm.amount} onValueChange={val => setTransferForm(f => ({ ...f, amount: val }))} />
                 </div>
                 <div className="form-group">

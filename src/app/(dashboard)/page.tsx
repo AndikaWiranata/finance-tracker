@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
-import { convertToIDR } from '@/lib/currency'
+import { convertToBase, formatCurrency, getFiatRates } from '@/lib/currency'
 import { Account, Transaction } from '@/types'
 import {
   TrendingUp, TrendingDown, Wallet, DollarSign,
@@ -13,6 +13,7 @@ import Link from 'next/link'
 import { processRecurringTransactions } from '@/lib/recurring'
 import { toast } from 'react-hot-toast'
 import { getLocalDateISO, getPreviousDateISO } from '@/lib/date'
+import SpendingHeatmap from '@/components/SpendingHeatmap'
 
 const TYPE_CONFIG: Record<string, { color: string; icon: string; bg: string }> = {
   bank:    { color: '#3b82f6', icon: '🏦', bg: 'rgba(59,130,246,0.15)' },
@@ -23,12 +24,10 @@ const TYPE_CONFIG: Record<string, { color: string; icon: string; bg: string }> =
   stock:   { color: '#ec4899', icon: '📈', bg: 'rgba(236,72,153,0.15)' },
 }
 
-function formatIDR(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
-}
+// Removed local formatIDR to use lib/currency formatCurrency
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 export default function DashboardPage() {
@@ -40,18 +39,35 @@ export default function DashboardPage() {
   const [historyData, setHistoryData] = useState<any[]>([])
   const [chartPeriod, setChartPeriod] = useState<string>('all')
   const [totalNetWorth, setTotalNetWorth] = useState(0)
-  const { user } = useAuth()
+  const [rawHistoryTransactions, setRawHistoryTransactions] = useState<any[]>([])
+  const { user, profile } = useAuth()
   const [loading, setLoading] = useState(true)
+  const [exchangeRate, setExchangeRate] = useState(1) // To convert IDR to Base
+  const baseCurrency = profile?.base_currency || 'IDR'
 
   useEffect(() => {
     async function load() {
       if (!user) return
       
+      // Process Exchange Rates if not IDR
+      let currentRate = 1
+      if (baseCurrency !== 'IDR') {
+        const rates = await getFiatRates()
+        if (rates) {
+          const idrToUsd = 1 / (rates['IDR'] || 15500)
+          const usdToBase = rates[baseCurrency] || 1
+          currentRate = idrToUsd * usdToBase
+          setExchangeRate(currentRate)
+        }
+      } else {
+        setExchangeRate(1)
+      }
+
       // Auto-process recurring transactions
       try {
         const processed = await processRecurringTransactions(supabase, user.id)
         if (processed.length > 0) {
-          toast.success(`Berhasil memproses ${processed.length} transaksi rutin otomatis!`)
+          toast.success(`Successfully processed ${processed.length} automated recurring transactions!`)
         }
       } catch (err) {
         console.error('Error processing recurring:', err)
@@ -103,7 +119,7 @@ export default function DashboardPage() {
       let totalFloating = 0
       for (const a of accsWithIdr) {
         if (a.type !== 'crypto' && a.type !== 'forex' && a.type !== 'stock') {
-          a.idrValue = await convertToIDR(Number(a.balance), a.currency || 'IDR')
+          a.idrValue = await convertToBase(Number(a.balance), a.currency || 'IDR', 'IDR')
           total += a.idrValue
         }
       }
@@ -129,7 +145,7 @@ export default function DashboardPage() {
       for (const f of (forexA ?? [])) {
         try {
           const base = f.currency_pair.split('/')[0] || 'USD'
-          const val = await convertToIDR(Number(f.equity), base.includes('IDR') ? 'USD' : base)
+          const val = await convertToBase(Number(f.equity), base.includes('IDR') ? 'USD' : base, 'IDR')
           total += val
           const target = accsWithIdr.find((a: any) => a.id === f.account_id)
           if (target) target.idrValue += val
@@ -176,8 +192,8 @@ export default function DashboardPage() {
       // 1. Start with historical snapshots
       if (snapshots && snapshots.length > 0) {
         finalHistory = snapshots.map(s => ({
-          date: new Date(s.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
-          value: Number(s.net_worth),
+          date: new Date(s.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short' }),
+          value: Number(s.net_worth) * currentRate,
           rawDate: s.date
         }))
       }
@@ -186,16 +202,16 @@ export default function DashboardPage() {
       if (total > 0) {
         if (!hasTodaySnapshot) {
           finalHistory.push({
-            date: 'Sekarang',
-            value: total,
+            date: 'Present',
+            value: total * currentRate,
             rawDate: todayStr
           })
         } else {
           // Sync existing today's snapshot with live total
           const todayIdx = finalHistory.findIndex(p => p.rawDate === todayStr)
           if (todayIdx !== -1) {
-            finalHistory[todayIdx].value = total
-            finalHistory[todayIdx].date = 'Sekarang'
+            finalHistory[todayIdx].value = total * currentRate
+            finalHistory[todayIdx].date = 'Present'
           }
         }
       }
@@ -217,8 +233,8 @@ export default function DashboardPage() {
           // Avoid duplicates with snapshots
           if (!finalHistory.some(p => p.rawDate === d)) {
             txPoints.push({
-              date: new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
-              value: runningTotal,
+              date: new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short' }),
+              value: runningTotal * currentRate,
               rawDate: d
             })
           }
@@ -230,18 +246,51 @@ export default function DashboardPage() {
       if (finalHistory.length === 1 && total > 0) {
           const yesterday = getPreviousDateISO(1)
           finalHistory.unshift({
-              date: new Date(yesterday).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+              date: new Date(yesterday).toLocaleDateString('en-US', { day: 'numeric', month: 'short' }),
               value: finalHistory[0].value,
               rawDate: yesterday
           })
       }
 
       setHistoryData(finalHistory)
+      // 2. Enhance raw transactions for Heatmap (Include Floating PNL for today + Historical PNL deltas)
+      const enhancedHistory = [...(historyTx ?? [])]
+      
+      // Inject today's Floating PNL
+      if (Math.abs(totalFloating) > 0.01) {
+          enhancedHistory.push({
+              amount: totalFloating,
+              type: 'pnl',
+              date: todayStr
+          })
+      }
 
+      // Infer historical PNL from snapshot deltas (Market movements not explained by TX)
+      if (snapshots && snapshots.length > 1) {
+          for (let i = 1; i < snapshots.length; i++) {
+              const prev = snapshots[i-1]
+              const curr = snapshots[i]
+              const netWorthDelta = Number(curr.net_worth) - Number(prev.net_worth)
+              
+              const dayTx = (historyTx ?? []).filter(t => t.date === curr.date)
+              const txSum = dayTx.reduce((acc, t) => acc + (t.type === 'income' ? Number(t.amount) : -Number(t.amount)), 0)
+              
+              const inferredMarketPnL = netWorthDelta - txSum
+              if (Math.abs(inferredMarketPnL) > 100 && curr.date !== todayStr) { // Use > 100 to ignore tiny fluctuations/rounding
+                  enhancedHistory.push({
+                      amount: inferredMarketPnL,
+                      type: 'pnl',
+                      date: curr.date
+                  })
+              }
+          }
+      }
+
+      setRawHistoryTransactions(enhancedHistory)
       setLoading(false)
     }
     load()
-  }, [user])
+  }, [user, baseCurrency])
 
   const breakdown = Object.entries(
     accounts.reduce<Record<string, number>>((acc, a: any) => {
@@ -269,7 +318,7 @@ export default function DashboardPage() {
     if (chartPeriod === '30d') cutoff.setDate(cutoff.getDate() - 30)
     
     const cutoffStr = cutoff.toISOString().slice(0, 10)
-    return historyData.filter(d => d.rawDate >= cutoffStr || d.date === 'Sekarang')
+    return historyData.filter(d => d.rawDate >= cutoffStr || d.date === 'Present')
   })()
 
   if (loading) return <div className="spinner" />
@@ -289,29 +338,29 @@ export default function DashboardPage() {
       {/* Net Worth */}
       <div className="networth-card mb-4">
         <div className="networth-label">Total Net Worth</div>
-        <div className="networth-amount">{formatIDR(totalNetWorth)}</div>
+        <div className="networth-amount">{formatCurrency(totalNetWorth * exchangeRate, baseCurrency)}</div>
         <div className="networth-sub">{accounts.length} accounts tracked</div>
         <div className="flex gap-3 mt-4" style={{ flexWrap: 'wrap' }}>
           <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8, padding: '8px 16px', display: 'flex', gap: 8, alignItems: 'center' }}>
             <TrendingUp size={15} color="var(--green)" />
             <div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Pemasukan Hari Ini</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--green)' }}>+{formatIDR(totalIncome)}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Today's Income</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--green)' }}>+{formatCurrency(totalIncome * exchangeRate, baseCurrency)}</div>
             </div>
           </div>
           <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '8px 16px', display: 'flex', gap: 8, alignItems: 'center' }}>
             <TrendingDown size={15} color="var(--red)" />
             <div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Pengeluaran Hari Ini</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--red)' }}>-{formatIDR(totalExpense)}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Today's Expense</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--red)' }}>-{formatCurrency(totalExpense * exchangeRate, baseCurrency)}</div>
             </div>
           </div>
           <div style={{ background: 'rgba(110,231,183,0.05)', border: '1px solid rgba(110,231,183,0.1)', borderRadius: 8, padding: '8px 16px', display: 'flex', gap: 8, alignItems: 'center' }}>
             <DollarSign size={15} color="#10b981" />
             <div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Floating P/L (24j)</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Floating P/L (24h)</div>
               <div style={{ fontSize: 14, fontWeight: 700, color: floatingPNL >= 0 ? '#10b981' : 'var(--red)' }}>
-                {floatingPNL >= 0 ? '+' : ''}{formatIDR(floatingPNL)}
+                {floatingPNL >= 0 ? '+' : ''}{formatCurrency(floatingPNL * exchangeRate, baseCurrency)}
               </div>
             </div>
           </div>
@@ -323,7 +372,7 @@ export default function DashboardPage() {
         <div className="flex-between mb-6" style={{ flexWrap: 'wrap', gap: 12 }}>
           <div className="section-title mb-0" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <TrendingUp size={20} color="var(--accent)" />
-            <span>Pertumbuhan Aset</span>
+            <span>Asset Growth</span>
           </div>
           <div className="flex gap-1" style={{ background: 'rgba(255,255,255,0.05)', padding: '4px', borderRadius: '10px' }}>
             {['7d', '30d', 'all'].map((p) => (
@@ -337,7 +386,7 @@ export default function DashboardPage() {
                   transition: 'all 0.2s'
                 }}
               >
-                {p === '7d' ? '7 Hari' : p === '30d' ? '30 Hari' : 'Semua'}
+                {p === '7d' ? '7 Days' : p === '30d' ? '30 Days' : 'All'}
               </button>
             ))}
           </div>
@@ -345,7 +394,7 @@ export default function DashboardPage() {
         
         {displayHistory.length < 2 ? (
           <div className="empty-state" style={{ height: 200 }}>
-            <p>Belum ada data history yang cukup untuk periode ini</p>
+            <p>Not enough historical data for this period</p>
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={300}>
@@ -378,7 +427,7 @@ export default function DashboardPage() {
                 }}
                 labelStyle={{ color: 'var(--text-muted)', marginBottom: 4, display: 'block' }}
                 itemStyle={{ color: 'var(--accent)', fontWeight: 'bold' }}
-                formatter={(v: any) => formatIDR(Number(v))}
+                formatter={(v: any) => formatCurrency(Number(v), baseCurrency)}
               />
               <Area 
                 type="monotone" 
@@ -394,6 +443,11 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {/* Spending Heatmap */}
+      <div className="mb-4">
+          <SpendingHeatmap transactions={rawHistoryTransactions} />
+      </div>
+
       {/* Breakdown grid */}
       <div className="grid-5 mb-4" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(180px, 1fr))` }}>
         {breakdown.map((b) => (
@@ -402,15 +456,15 @@ export default function DashboardPage() {
               <span>{b.icon}</span>
             </div>
             <div className="stat-label" style={{ textTransform: 'capitalize' }}>{b.type}</div>
-            <div className="stat-value" style={{ fontSize: 15 }}>{formatIDR(b.value)}</div>
+            <div className="stat-value" style={{ fontSize: 15 }}>{formatCurrency(b.value * exchangeRate, baseCurrency)}</div>
             
             {(b.income || b.expense || b.pnl) ? (
               <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: '4px 8px', fontSize: 10, fontWeight: 600 }}>
-                {b.income > 0 && <span style={{ color: 'var(--green)' }}>+{formatIDR(b.income)}</span>}
-                {b.expense > 0 && <span style={{ color: 'var(--red)' }}>-{formatIDR(b.expense)}</span>}
+                {b.income > 0 && <span style={{ color: 'var(--green)' }}>+{formatCurrency(b.income * exchangeRate, baseCurrency)}</span>}
+                {b.expense > 0 && <span style={{ color: 'var(--red)' }}>-{formatCurrency(b.expense * exchangeRate, baseCurrency)}</span>}
                 {b.pnl !== 0 && (
                   <span style={{ color: b.pnl > 0 ? '#10b981' : '#f43f5e', opacity: 0.8 }}>
-                    {b.pnl > 0 ? '📈' : '📉'} {b.pnl > 0 ? '+' : ''}{formatIDR(b.pnl)}
+                    {b.pnl > 0 ? '📈' : '📉'} {b.pnl > 0 ? '+' : ''}{formatCurrency(b.pnl * exchangeRate, baseCurrency)}
                   </span>
                 )}
               </div>
@@ -435,7 +489,7 @@ export default function DashboardPage() {
                     <Cell key={entry.type} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v: any) => formatIDR(Number(v))} />
+                <Tooltip formatter={(v: any) => formatCurrency(Number(v) * exchangeRate, baseCurrency)} />
               </PieChart>
             </ResponsiveContainer>
           )}
@@ -469,7 +523,7 @@ export default function DashboardPage() {
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t.accounts?.name} · {formatDate(t.date)}</div>
                   </div>
                   <div className={t.type === 'income' ? 'amount-income' : 'amount-expense'}>
-                    {t.type === 'income' ? '+' : '-'}{formatIDR(Number(t.amount))}
+                    {t.type === 'income' ? '+' : '-'}{formatCurrency(Number(t.amount) * exchangeRate, baseCurrency)}
                   </div>
                 </div>
               ))}
@@ -495,10 +549,10 @@ export default function DashboardPage() {
                   <span className="account-type-badge" style={{ background: cfg.bg, color: cfg.color }}>
                     {cfg.icon} {acc.type}
                   </span>
-                  <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{acc.type === 'crypto' || acc.type === 'forex' || acc.type === 'stock' ? 'IDR (eq)' : acc.currency}</span>
+                  <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{acc.type === 'crypto' || acc.type === 'forex' || acc.type === 'stock' ? `${baseCurrency} (eq)` : acc.currency}</span>
                 </div>
                 <div className="account-name">{acc.name}</div>
-                <div className="account-balance">{formatIDR(Number((acc as any).idrValue))}</div>
+                <div className="account-balance">{formatCurrency(Number((acc as any).idrValue) * exchangeRate, baseCurrency)}</div>
               </div>
             )
           })}

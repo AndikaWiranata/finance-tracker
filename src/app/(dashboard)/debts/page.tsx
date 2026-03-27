@@ -2,23 +2,24 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
-import { formatNumberInput, parseNumberInput } from '@/lib/currency'
+import { formatCurrency, formatNumberInput, getFiatRates, parseNumberInput, convertToBase } from '@/lib/currency'
+import CurrencyInput from '@/components/CurrencyInput'
 import { Account } from '@/types'
 import { Plus, X, Landmark, ArrowRight, Trash2, Calendar, User, DollarSign, AlertCircle, CheckCircle2, History } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { getLocalDateISO } from '@/lib/date'
 
-function formatIDR(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
-}
+// Replaced local formatIDR with global formatCurrency
 
 function formatDate(d: string) {
   if (!d) return '-'
-  return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 export default function DebtsPage() {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
+  const [exchangeRate, setExchangeRate] = useState(1)
+  const baseCurrency = profile?.base_currency || 'IDR'
   const [loading, setLoading] = useState(true)
   const [debts, setDebts] = useState<any[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -53,6 +54,18 @@ export default function DebtsPage() {
 
   async function loadData() {
     if (!user) return
+    
+    if (baseCurrency !== 'IDR') {
+      const frates = await getFiatRates()
+      if (frates) {
+        const idrToUsd = 1 / (frates['IDR'] || 15500)
+        const usdToBase = frates[baseCurrency] || 1
+        setExchangeRate(idrToUsd * usdToBase)
+      }
+    } else {
+      setExchangeRate(1)
+    }
+
     setLoading(true)
     const [{ data: debtsData }, { data: accs }] = await Promise.all([
       supabase.from('debts').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
@@ -66,13 +79,14 @@ export default function DebtsPage() {
     setLoading(false)
   }
 
-  useEffect(() => { loadData() }, [user])
+  useEffect(() => { loadData() }, [user, baseCurrency])
 
   async function handleAddDebt(e: React.FormEvent) {
     e.preventDefault()
     if (!user) return
-    const amount = parseFloat(parseNumberInput(form.amount)) || 0
-    if (amount <= 0) return toast.error('Jumlah harus lebih dari 0')
+    const amountInBase = parseFloat(parseNumberInput(form.amount, baseCurrency)) || 0
+    if (amountInBase <= 0) return toast.error('Amount must be more than 0')
+    const amountIDR = await convertToBase(amountInBase, baseCurrency, 'IDR')
 
     setSaving(true)
     const { error } = await supabase.from('debts').insert({
@@ -80,15 +94,15 @@ export default function DebtsPage() {
       person_name: form.person_name,
       type: form.type,
       category: form.category,
-      amount,
-      remaining_amount: amount,
+      amount: amountIDR,
+      remaining_amount: amountIDR,
       note: form.note || null,
       due_date: form.due_date || null,
       status: 'open'
     })
 
     if (!error) {
-      toast.success('Hutang/Piutang berhasil ditambahkan')
+      toast.success('Debt/Receivable successfully added')
       setShowAddModal(false)
       loadData()
       setForm({ person_name: '', type: 'debt', category: 'Personal', amount: '', note: '', due_date: '' })
@@ -101,16 +115,18 @@ export default function DebtsPage() {
   async function handleAddPayment(e: React.FormEvent) {
     e.preventDefault()
     if (!user || !selectedDebt) return
-    const amount = parseFloat(parseNumberInput(paymentForm.amount)) || 0
-    if (amount <= 0) return toast.error('Jumlah harus lebih dari 0')
-    if (amount > selectedDebt.remaining_amount) return toast.error('Jumlah melebihi sisa hutang/piutang')
+    const amountInBase = parseFloat(parseNumberInput(paymentForm.amount, baseCurrency)) || 0
+    if (amountInBase <= 0) return toast.error('Amount must be more than 0')
+    const amountIDR = await convertToBase(amountInBase, baseCurrency, 'IDR')
+    
+    if (amountIDR > selectedDebt.remaining_amount) return toast.error('Amount exceeds remaining debt/receivable')
 
     setSaving(true)
     
     // 1. Log Payment
     const { error: pError } = await supabase.from('debt_payments').insert({
       debt_id: selectedDebt.id,
-      amount,
+      amount: amountIDR,
       payment_date: paymentForm.date,
       account_id: paymentForm.account_id ? parseInt(paymentForm.account_id) : null,
       note: paymentForm.note || null
@@ -123,7 +139,7 @@ export default function DebtsPage() {
     }
 
     // 2. Update Debt Remaining
-    const newRemaining = Number(selectedDebt.remaining_amount) - amount
+    const newRemaining = Number(selectedDebt.remaining_amount) - amountIDR
     const { error: dError } = await supabase.from('debts').update({
       remaining_amount: newRemaining,
       status: newRemaining <= 0 ? 'completed' : 'open'
@@ -133,27 +149,26 @@ export default function DebtsPage() {
     if (paymentForm.sync_to_ledger && paymentForm.account_id) {
        const acc = accounts.find(a => a.id === parseInt(paymentForm.account_id))
        if (acc) {
-          // If paying DEBT: it's an Expense
-          // If receiving PIUTANG: it's an Income
           const type = selectedDebt.type === 'debt' ? 'expense' : 'income'
           
           await supabase.from('transactions').insert({
             user_id: user.id,
             account_id: acc.id,
             type,
-            amount,
+            amount: amountIDR,
             category: 'Debt Repayment',
-            note: `${selectedDebt.type === 'debt' ? 'Bayar Hutang' : 'Terima Cicilan'} - ${selectedDebt.person_name}`,
+            note: `${selectedDebt.type === 'debt' ? 'Pay Debt' : 'Receive Payment'} - ${selectedDebt.person_name}`,
             date: paymentForm.date
           })
 
-          // Update Balance
-          const delta = type === 'income' ? amount : -amount
+          // Update Balance (Convert to account currency)
+          const accAmount = await convertToBase(amountIDR, 'IDR', acc.currency || 'IDR')
+          const delta = type === 'income' ? accAmount : -accAmount
           await supabase.from('accounts').update({ balance: Number(acc.balance) + delta }).eq('id', acc.id)
        }
     }
 
-    toast.success('Pembayaran berhasil dicatat')
+    toast.success('Payment successfully recorded')
     setShowPaymentModal(false)
     loadData()
     setSaving(false)
@@ -175,28 +190,28 @@ export default function DebtsPage() {
     <div className="animate-in">
       <div className="flex-between mb-8">
         <div>
-          <h1 style={{ fontSize: 32, fontWeight: 800 }}>Hutang & Piutang</h1>
-          <p style={{ color: 'var(--text-muted)' }}>Pantau kewajiban dan tagihan kamu</p>
+          <h1 style={{ fontSize: 32, fontWeight: 800 }}>Debts & Receivables</h1>
+          <p style={{ color: 'var(--text-muted)' }}>Track your liabilities and claims</p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
-          <Plus size={20} /> Tambah Baru
+          <Plus size={20} /> Add New
         </button>
       </div>
 
       <div className="grid-2 mb-8">
         <div className="card" style={{ background: 'linear-gradient(135deg, rgba(239,68,68,0.1) 0%, rgba(239,68,68,0.05) 100%)', border: '1px solid rgba(239,68,68,0.2)' }}>
           <div className="flex-between mb-2">
-            <span style={{ fontSize: 13, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>Total Hutang (Hutang ke Orang)</span>
+            <span style={{ fontSize: 13, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>Total Debt (Money Owed to Others)</span>
             <AlertCircle size={18} color="var(--red)" />
           </div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--red)' }}>{formatIDR(totals.totalDebt)}</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--red)' }}>{formatCurrency(totals.totalDebt * exchangeRate, baseCurrency)}</div>
         </div>
         <div className="card" style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.1) 0%, rgba(34,197,94,0.05) 100%)', border: '1px solid rgba(34,197,94,0.2)' }}>
           <div className="flex-between mb-2">
-            <span style={{ fontSize: 13, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>Total Piutang (Orang Hutang ke Kita)</span>
+            <span style={{ fontSize: 13, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>Total Receivable (Money Owed to You)</span>
             <CheckCircle2 size={18} color="var(--green)" />
           </div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--green)' }}>{formatIDR(totals.totalReceivable)}</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--green)' }}>{formatCurrency(totals.totalReceivable * exchangeRate, baseCurrency)}</div>
         </div>
       </div>
 
@@ -206,14 +221,14 @@ export default function DebtsPage() {
           onClick={() => setActiveTab('open')}
           style={{ padding: '12px 4px', background: 'none', border: 'none', color: activeTab === 'open' ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, cursor: 'pointer', borderBottom: activeTab === 'open' ? '2px solid var(--accent)' : 'none' }}
         >
-          Masih Berjalan ({debts.filter(d => d.status === 'open').length})
+          Outstanding ({debts.filter(d => d.status === 'open').length})
         </button>
         <button 
           className={`tab-item ${activeTab === 'completed' ? 'active' : ''}`} 
           onClick={() => setActiveTab('completed')}
           style={{ padding: '12px 4px', background: 'none', border: 'none', color: activeTab === 'completed' ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, cursor: 'pointer', borderBottom: activeTab === 'completed' ? '2px solid var(--accent)' : 'none' }}
         >
-          Sudah Lunas ({debts.filter(d => d.status === 'completed').length})
+          Settled ({debts.filter(d => d.status === 'completed').length})
         </button>
       </div>
 
@@ -221,7 +236,7 @@ export default function DebtsPage() {
         {filteredDebts.length === 0 ? (
           <div className="card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '60px 0' }}>
             <Landmark size={48} color="var(--text-muted)" style={{ opacity: 0.2, margin: '0 auto 16px' }} />
-            <p style={{ color: 'var(--text-muted)' }}>Tidak ada data {activeTab === 'open' ? 'hutang aktif' : 'riwayat lunas'}</p>
+            <p style={{ color: 'var(--text-muted)' }}>No {activeTab === 'open' ? 'active debt' : 'settled history'} data found</p>
           </div>
         ) : (
           filteredDebts.map(d => {
@@ -240,19 +255,19 @@ export default function DebtsPage() {
                     </div>
                     <div>
                       <div style={{ fontWeight: 700, fontSize: 16 }}>{d.person_name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{d.category} • {d.type === 'debt' ? 'Hutang Kita' : 'Piutang Orang'}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{d.category} • {d.type === 'debt' ? 'Our Debt' : "Others' Debt"}</div>
                     </div>
                   </div>
                   {d.status === 'open' && (
                     <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedDebt(d); setShowPaymentModal(true); }}>
-                      Bayar
+                      Pay
                     </button>
                   )}
                 </div>
 
                 <div className="flex-between mb-1" style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                  <span>Sisa: {formatIDR(Number(d.remaining_amount))}</span>
-                  <span>Total: {formatIDR(Number(d.amount))}</span>
+                  <span>Remaining: {formatCurrency(Number(d.remaining_amount) * exchangeRate, baseCurrency)}</span>
+                  <span>Total: {formatCurrency(Number(d.amount) * exchangeRate, baseCurrency)}</span>
                 </div>
                 
                 <div style={{ width: '100%', height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, marginBottom: 16 }}>
@@ -265,7 +280,7 @@ export default function DebtsPage() {
 
                 <div className="grid-2" style={{ gap: 12 }}>
                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                      <Calendar size={12} style={{ marginRight: 4 }} /> Jatuh Tempo: <span style={{ color: 'var(--text-primary)' }}>{formatDate(d.due_date)}</span>
+                      <Calendar size={12} style={{ marginRight: 4 }} /> Due Date: <span style={{ color: 'var(--text-primary)' }}>{formatDate(d.due_date)}</span>
                    </div>
                    {d.note && (
                      <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', textAlign: 'right' }}>
@@ -284,30 +299,32 @@ export default function DebtsPage() {
         <div className="modal-overlay">
           <div className="modal-content animate-in" style={{ maxWidth: 500 }}>
             <div className="flex-between mb-6">
-              <h2 style={{ fontSize: 22, fontWeight: 800 }}>Tambah Baru</h2>
+              <h2 style={{ fontSize: 22, fontWeight: 800 }}>Add New</h2>
               <button className="btn-icon" onClick={() => setShowAddModal(false)}><X /></button>
             </div>
             <form onSubmit={handleAddDebt}>
               <div className="form-group">
-                <label className="form-label">Tipe Obligasi</label>
+                <label className="form-label">Obligation Type</label>
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <button type="button" className={`btn flex-1 ${form.type === 'debt' ? 'btn-danger' : 'btn-ghost'}`} onClick={() => setForm({...form, type: 'debt'})}>Hutang (Pinjam Orang)</button>
-                  <button type="button" className={`btn flex-1 ${form.type === 'receivable' ? 'btn-success' : 'btn-ghost'}`} onClick={() => setForm({...form, type: 'receivable'})}>Piutang (Pijami Orang)</button>
+                  <button type="button" className={`btn flex-1 ${form.type === 'debt' ? 'btn-danger' : 'btn-ghost'}`} onClick={() => setForm({...form, type: 'debt'})}>Debt (Borrowing)</button>
+                  <button type="button" className={`btn flex-1 ${form.type === 'receivable' ? 'btn-success' : 'btn-ghost'}`} onClick={() => setForm({...form, type: 'receivable'})}>Receivable (Lending)</button>
                 </div>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Nama Orang / Lembaga</label>
-                <input type="text" className="form-input" required placeholder="Budi, BCA, Pinjol, dll" value={form.person_name} onChange={e => setForm({...form, person_name: e.target.value})} />
+                <label className="form-label">Person / Institution Name</label>
+                <input type="text" className="form-input" required placeholder="name, bank, etc" value={form.person_name} onChange={e => setForm({...form, person_name: e.target.value})} />
               </div>
 
               <div className="grid-2">
                 <div className="form-group">
-                  <label className="form-label">Total Amount (Rp)</label>
-                  <input type="text" className="form-input" required value={form.amount} onChange={e => setForm({...form, amount: formatNumberInput(e.target.value)})} />
+                  <label className="form-label">Total Amount</label>
+                  <CurrencyInput className="form-input" required 
+                    currency={baseCurrency}
+                    value={form.amount} onValueChange={val => setForm({...form, amount: val})} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Kategori</label>
+                  <label className="form-label">Category</label>
                   <select className="form-input" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
                     <option value="Personal">Personal</option>
                     <option value="Business">Business</option>
@@ -319,17 +336,17 @@ export default function DebtsPage() {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Tanggal Jatuh Tempo (Opsional)</label>
+                <label className="form-label">Due Date (Optional)</label>
                 <input type="date" className="form-input" value={form.due_date} onChange={e => setForm({...form, due_date: e.target.value})} />
               </div>
 
               <div className="form-group">
-                <label className="form-label">Catatan</label>
-                <input type="text" className="form-input" placeholder="Keterangan tambahan..." value={form.note} onChange={e => setForm({...form, note: e.target.value})} />
+                <label className="form-label">Note</label>
+                <input type="text" className="form-input" placeholder="Additional details..." value={form.note} onChange={e => setForm({...form, note: e.target.value})} />
               </div>
 
               <button type="submit" className="btn btn-primary w-full" disabled={saving}>
-                {saving ? 'Menyimpan...' : 'Simpan Obligasi'}
+                {saving ? 'Saving...' : 'Save Obligation'}
               </button>
             </form>
           </div>
@@ -341,39 +358,41 @@ export default function DebtsPage() {
         <div className="modal-overlay">
           <div className="modal-content animate-in" style={{ maxWidth: 450 }}>
              <div className="flex-between mb-4">
-                <h2 style={{ fontSize: 20, fontWeight: 800 }}>Mencatat Cicilan</h2>
+                <h2 style={{ fontSize: 20, fontWeight: 800 }}>Record Installment</h2>
                 <button className="btn-icon" onClick={() => setShowPaymentModal(false)}><X /></button>
              </div>
              <div className="card-sm mb-6" style={{ background: 'rgba(255,255,255,0.03)', border: '1px dashed var(--border)' }}>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sisa {selectedDebt.type === 'debt' ? 'Hutang' : 'Tagihan'} ke {selectedDebt.person_name}:</div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>{formatIDR(Number(selectedDebt.remaining_amount))}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Remaining {selectedDebt.type === 'debt' ? 'Debt' : 'Claim'} to {selectedDebt.person_name}:</div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{formatCurrency(Number(selectedDebt.remaining_amount) * exchangeRate, baseCurrency)}</div>
              </div>
 
              <form onSubmit={handleAddPayment}>
                 <div className="form-group">
-                  <label className="form-label">Jumlah Pembayaran (Rp)</label>
-                  <input type="text" className="form-input" required autoFocus value={paymentForm.amount} onChange={e => setPaymentForm({...paymentForm, amount: formatNumberInput(e.target.value)})} />
+                  <label className="form-label">Payment Amount</label>
+                  <CurrencyInput className="form-input" required autoFocus 
+                    currency={baseCurrency}
+                    value={paymentForm.amount} onValueChange={val => setPaymentForm({...paymentForm, amount: val})} />
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Sumber Akun (Untuk Potong/Tambah Saldo)</label>
+                  <label className="form-label">Source Account (To update balance)</label>
                   <select className="form-input" value={paymentForm.account_id} onChange={e => setPaymentForm({...paymentForm, account_id: e.target.value})}>
-                     {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({formatIDR(Number(a.balance))})</option>)}
+                     {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({formatCurrency(Number(a.balance) * exchangeRate, baseCurrency)})</option>)}
                   </select>
                 </div>
 
                 <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                    <input type="checkbox" checked={paymentForm.sync_to_ledger} onChange={e => setPaymentForm({...paymentForm, sync_to_ledger: e.target.checked})} />
-                   <label style={{ fontSize: 13, userSelect: 'none' }}>Catat otomatis di riwayat Transaksi</label>
+                   <label style={{ fontSize: 13, userSelect: 'none' }}>Automatically record in Transaction history</label>
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Keterangan</label>
+                  <label className="form-label">Details</label>
                   <input type="text" className="form-input" value={paymentForm.note} onChange={e => setPaymentForm({...paymentForm, note: e.target.value})} />
                 </div>
 
                 <button type="submit" className="btn btn-primary w-full" disabled={saving}>
-                  {saving ? 'Memproses...' : 'Konfirmasi Pembayaran'}
+                  {saving ? 'Processing...' : 'Confirm Payment'}
                 </button>
              </form>
           </div>

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
-import { formatNumberInput, parseNumberInput } from '@/lib/currency'
+import { formatCurrency, formatNumberInput, getFiatRates, parseNumberInput } from '@/lib/currency'
 import CurrencyInput from '@/components/CurrencyInput'
 import { Account, CryptoWallet } from '@/types'
 import { Bitcoin, Plus, X, Edit2, Check } from 'lucide-react'
@@ -23,12 +23,10 @@ interface RateData {
   change24hPct: number
 }
 
-function formatIDR(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
-}
+// Replaced local formatIDR with global formatCurrency
 
 function formatCrypto(n: number) {
-  return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 8 }).format(n)
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 8 }).format(n)
 }
 
 export default function CryptoPage() {
@@ -42,11 +40,25 @@ export default function CryptoPage() {
   const [updateForm, setUpdateForm] = useState({ balance: '', isProfitLoss: true })
   const [saving, setSaving] = useState(false)
 
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
+  const [exchangeRate, setExchangeRate] = useState(1)
+  const baseCurrency = profile?.base_currency || 'IDR'
   const [rates, setRates] = useState<Record<number, RateData>>({})
 
   async function load() {
     if (!user) return
+    
+    if (baseCurrency !== 'IDR') {
+      const frates = await getFiatRates()
+      if (frates) {
+        const idrToUsd = 1 / (frates['IDR'] || 15500)
+        const usdToBase = frates[baseCurrency] || 1
+        setExchangeRate(idrToUsd * usdToBase)
+      }
+    } else {
+      setExchangeRate(1)
+    }
+
     const [{ data: accs }, { data: w }] = await Promise.all([
       supabase.from('accounts').select('*').eq('user_id', user.id).eq('type', 'crypto'),
       supabase.from('crypto_wallets').select('*, accounts(name)').eq('user_id', user.id),
@@ -87,7 +99,7 @@ export default function CryptoPage() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [user])
+  useEffect(() => { load() }, [user, baseCurrency])
 
   async function submit(e: React.FormEvent) {
     if (!user) return
@@ -200,9 +212,9 @@ export default function CryptoPage() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {wallets.map(wl => (
-            <div 
-              key={wl.id} 
-              className="card asset-row" 
+            <div
+              key={wl.id}
+              className="card asset-row"
               style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', cursor: 'pointer', transition: 'all 0.2s', position: 'relative' }}
               onClick={(e) => {
                 if ((e.target as HTMLElement).closest('button')) return
@@ -217,20 +229,19 @@ export default function CryptoPage() {
                 <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>{wl.accountName}</div>
                 {rates[wl.id] && (
                   <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 4 }}>
-                    Live Price: ${rates[wl.id].priceUSD.toLocaleString()}
+                    Live Price: {formatCurrency(rates[wl.id].priceIDR * exchangeRate, baseCurrency)}
                   </div>
                 )}
               </div>
               <div style={{ textAlign: 'right', display: 'flex', gap: 16, alignItems: 'center' }}>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 16, fontWeight: 700, color: '#f59e0b' }}>{formatCrypto(Number(wl.balance))} {wl.coin_symbol}</div>
-                   {rates[wl.id] && rates[wl.id].priceIDR > 0 ? (
+                  {rates[wl.id] && rates[wl.id].priceIDR > 0 ? (
                     <>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>≈ ${rates[wl.id].usd.toLocaleString()}</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{formatIDR(rates[wl.id].idr)}</div>
+                      <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 700 }}>{formatCurrency(rates[wl.id].idr * exchangeRate, baseCurrency)}</div>
                       {rates[wl.id].change24hPct !== 0 && (
                         <div style={{ fontSize: 11, fontWeight: 600, marginTop: 4, color: (rates[wl.id].change24hIDR ?? 0) >= 0 ? '#10b981' : '#f43f5e' }}>
-                          {rates[wl.id].change24hIDR > 0 ? '+' : ''}{formatIDR(rates[wl.id].change24hIDR)} ({(rates[wl.id].change24hPct ?? 0).toFixed(2)}%)
+                          {rates[wl.id].change24hIDR > 0 ? '+' : ''}{formatCurrency(rates[wl.id].change24hIDR * exchangeRate, baseCurrency)} ({(rates[wl.id].change24hPct ?? 0).toFixed(2)}%)
                         </div>
                       )}
                     </>
@@ -308,6 +319,7 @@ export default function CryptoPage() {
                 <div className="form-group">
                   <label className="form-label">Total Balance</label>
                   <CurrencyInput className="form-input" placeholder="0" required
+                    currency={form.coin_symbol === 'CUSTOM' ? 'USD' : form.coin_symbol}
                     value={form.balance} onValueChange={val => setForm(f => ({ ...f, balance: val }))} />
                 </div>
               </div>
@@ -340,6 +352,7 @@ export default function CryptoPage() {
             <div className="form-group">
               <label className="form-label">New Total Balance ({updatingWl.coin_symbol})</label>
               <CurrencyInput className="form-input" autoFocus
+                currency={updatingWl.coin_symbol}
                 value={updateForm.balance} onValueChange={val => setUpdateForm(f => ({ ...f, balance: val }))} />
 
               {/* Delta Preview */}
@@ -355,7 +368,7 @@ export default function CryptoPage() {
                       {delta > 0 ? '📈 Gain:' : '📉 Loss:'} {delta > 0 ? '+' : ''}{(delta || 0).toFixed(8)} {updatingWl.coin_symbol}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                      Estimasi: {delta > 0 ? '+' : ''}{formatIDR(idrDeltaValue)}
+                      Estimated: {delta > 0 ? '+' : ''}{formatCurrency(idrDeltaValue * exchangeRate, baseCurrency)}
                     </div>
                   </div>
                 )
@@ -370,7 +383,7 @@ export default function CryptoPage() {
                 <span>Record as Profit/Loss transaction?</span>
               </label>
               <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, marginLeft: 28 }}>
-                Jika dicentang, selisih nilai Rupiah akan dicatat sebagai Pemasukan/Pengeluaran.
+                If checked, the difference in value will be recorded as Income/Expense.
               </p>
             </div>
 

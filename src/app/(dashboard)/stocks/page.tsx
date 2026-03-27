@@ -3,19 +3,18 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
-import { formatNumberInput, parseNumberInput } from '@/lib/currency'
+import { formatCurrency, formatNumberInput, getFiatRates, parseNumberInput, convertToBase } from '@/lib/currency'
+import CurrencyInput from '@/components/CurrencyInput'
 import { Account, StockPortfolio } from '@/types'
 import { TrendingUp, Plus, X, Edit2, Check } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 
 type StockWithAccount = StockPortfolio & { accountName: string }
 
-function formatIDR(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
-}
+// Replaced local formatIDR with global formatCurrency
 
 function formatPercent(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'percent', maximumFractionDigits: 2 }).format(n)
+  return new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 2 }).format(n)
 }
 
 export default function StocksPage() {
@@ -29,11 +28,25 @@ export default function StocksPage() {
   const [form, setForm] = useState({ account_id: '', ticker: '', lots: '', avgPrice: '', currency: 'IDR' })
   const [saving, setSaving] = useState(false)
 
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
+  const [exchangeRate, setExchangeRate] = useState(1)
+  const baseCurrency = profile?.base_currency || 'IDR'
   const [liveData, setLiveData] = useState<Record<number, { price: number, change: number, changePct: number, rate: number }>>({})
 
   async function load() {
     if (!user) return
+    
+    if (baseCurrency !== 'IDR') {
+      const frates = await getFiatRates()
+      if (frates) {
+        const idrToUsd = 1 / (frates['IDR'] || 15500)
+        const usdToBase = frates[baseCurrency] || 1
+        setExchangeRate(idrToUsd * usdToBase)
+      }
+    } else {
+      setExchangeRate(1)
+    }
+
     const [{ data: accs }, { data: pfolio }] = await Promise.all([
       supabase.from('accounts').select('*').eq('user_id', user.id).eq('type', 'stock'),
       supabase.from('stock_portfolios').select('*, accounts(name)').eq('user_id', user.id),
@@ -88,7 +101,7 @@ export default function StocksPage() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [user])
+  useEffect(() => { load() }, [user, baseCurrency])
 
   async function submit(e: React.FormEvent) {
     if (!user) return
@@ -99,7 +112,7 @@ export default function StocksPage() {
       user_id: user.id,
       ticker: (form.currency === 'IDR' && !form.ticker.includes('.')) ? `${form.ticker.toUpperCase()}.JK` : form.ticker.toUpperCase(),
       lots: parseInt(form.lots),
-      average_price: parseFloat(parseNumberInput(form.avgPrice)),
+      average_price: parseFloat(parseNumberInput(form.avgPrice, form.currency)),
     })
     setForm(f => ({ ...f, ticker: '', lots: '', avgPrice: '' }))
     setShowModal(false)
@@ -107,10 +120,11 @@ export default function StocksPage() {
     await load()
   }
 
-  async function saveEdit(id: number) {
+   async function saveEdit(id: number) {
+    const st = stocks.find(s => s.id === id)
     await supabase.from('stock_portfolios').update({ 
       lots: parseInt(editForm.lots) || 0,
-      average_price: parseFloat(parseNumberInput(editForm.avgPrice)) || 0
+      average_price: parseFloat(parseNumberInput(editForm.avgPrice, st?.ticker?.includes('.JK') ? 'IDR' : 'USD')) || 0
     }).eq('id', id)
     setEditing(null)
     await load()
@@ -141,7 +155,7 @@ export default function StocksPage() {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Saham (Stocks)</h1>
+          <h1 className="page-title">Stocks Portfolio</h1>
           <p className="page-subtitle">Track your stock portfolio with live Yahoo Finance integration.</p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowModal(true)} disabled={accounts.length === 0}>
@@ -190,23 +204,23 @@ export default function StocksPage() {
                 <div style={{ flex: 1, minWidth: 150 }}>
                   <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{st.ticker}</div>
                   <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>{st.accountName}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                    {st.lots} Lot ({st.lots * 100} Lbr) &middot; Avg {st.ticker.includes('.JK') ? formatIDR(st.average_price) : `$${st.average_price.toLocaleString()}`}
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {st.lots} Lots ({st.lots * 100} Shares) &middot; Avg Cost {st.ticker.includes('.JK') ? formatCurrency(st.average_price * exchangeRate, baseCurrency) : `$${st.average_price.toLocaleString()}`}
                   </div>
                 </div>
                 
                 <div style={{ flex: 1, minWidth: 120, textAlign: 'right' }}>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Price & Performa</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Price & Performance</div>
                   <div style={{ fontSize: 15, fontWeight: 600, color: live ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                    {live ? formatIDR(live.price) : 'Loading...'}
+                    {live ? formatCurrency(live.price * exchangeRate, baseCurrency) : 'Loading...'}
                   </div>
                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginTop: 4 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: profitLoss >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                      Total: {profitLoss > 0 ? '+' : ''}{formatIDR(profitLoss)} ({plPercent > 0 ? '+' : ''}{formatPercent(plPercent)})
+                      Total: {profitLoss > 0 ? '+' : ''}{formatCurrency(profitLoss * exchangeRate, baseCurrency)} ({plPercent > 0 ? '+' : ''}{formatPercent(plPercent)})
                     </div>
                     {live && (
                       <div style={{ fontSize: 11, fontWeight: 500, color: live.change >= 0 ? '#10b981' : '#f43f5e' }}>
-                        Hari Ini: {live.change > 0 ? '+' : ''}{formatIDR(dailyPNL)} ({live.changePct > 0 ? '+' : ''}{live.changePct.toFixed(2)}%)
+                        Today: {live.change > 0 ? '+' : ''}{formatCurrency(dailyPNL * exchangeRate, baseCurrency)} ({live.changePct > 0 ? '+' : ''}{live.changePct.toFixed(2)}%)
                       </div>
                     )}
                   </div>
@@ -217,8 +231,9 @@ export default function StocksPage() {
                     <div className="flex gap-2" style={{ alignItems: 'center' }}>
                       <input className="form-input" type="number" placeholder="Lots" style={{ width: 70, padding: '6px 10px' }}
                         value={editForm.lots} onChange={e => setEditForm(f => ({ ...f, lots: e.target.value }))} />
-                      <input className="form-input" type="text" placeholder="Avg Price" style={{ width: 100, padding: '6px 10px' }}
-                        value={editForm.avgPrice} onChange={e => setEditForm(f => ({ ...f, avgPrice: formatNumberInput(e.target.value) }))} />
+                      <CurrencyInput className="form-input" placeholder="Avg Price" style={{ width: 100, padding: '6px 10px' }}
+                        currency={st.ticker.includes('.JK') ? 'IDR' : 'USD'}
+                        value={editForm.avgPrice} onValueChange={val => setEditForm(f => ({ ...f, avgPrice: val }))} />
                       <button className="btn btn-primary btn-sm" onClick={() => saveEdit(st.id)}>
                         <Check size={14} />
                       </button>
@@ -226,8 +241,8 @@ export default function StocksPage() {
                   ) : (
                     <>
                       <div style={{ textAlign: 'right', minWidth: 100 }}>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Market Value</div>
-                        <div style={{ fontSize: 16, fontWeight: 700, color: '#ec4899' }}>{formatIDR(totalValue)}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>Market Value</div>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: '#ec4899' }}>{formatCurrency(totalValue * exchangeRate, baseCurrency)}</div>
                       </div>
                       <div className="flex gap-2">
                         <button className="btn btn-ghost btn-sm" onClick={(e) => {
@@ -300,12 +315,10 @@ export default function StocksPage() {
                       ))}
                     </div>
                   </div>
-                  <div style={{ position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 13, pointerEvents: 'none' }}>
-                      {form.currency === 'USD' ? '$' : 'Rp'}
-                    </span>
-                    <input className="form-input" type="text" placeholder="0" required style={{ paddingLeft: form.currency === 'USD' ? 24 : 34 }}
-                      value={form.avgPrice} onChange={e => setForm(f => ({ ...f, avgPrice: formatNumberInput(e.target.value) }))} />
+                  <div>
+                    <CurrencyInput className="form-input" required 
+                      currency={form.currency}
+                      value={form.avgPrice} onValueChange={val => setForm(f => ({ ...f, avgPrice: val }))} />
                   </div>
                 </div>
               </div>

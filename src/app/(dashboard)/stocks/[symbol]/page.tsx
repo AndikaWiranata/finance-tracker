@@ -6,14 +6,16 @@ import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import TradingViewWidget from '@/components/TradingViewWidget'
 
-function formatIDR(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
-}
+import { formatCurrency, getFiatRates } from '@/lib/currency'
+
+// Replaced local formatIDR with global formatCurrency
 
 export default function StockDetailPage() {
   const { symbol } = useParams()
   const router = useRouter()
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
+  const [exchangeRate, setExchangeRate] = useState(1)
+  const baseCurrency = profile?.base_currency || 'IDR'
   const [loading, setLoading] = useState(true)
   const [assetData, setAssetData] = useState<any>(null)
   const [totalLots, setTotalLots] = useState(0)
@@ -22,6 +24,17 @@ export default function StockDetailPage() {
   useEffect(() => {
     async function fetchDetails() {
       if (!user || !symbol) return
+      
+      if (baseCurrency !== 'IDR') {
+         const frates = await getFiatRates()
+         if (frates) {
+             const idrToUsd = 1 / (frates['IDR'] || 15500)
+             const usdToBase = frates[baseCurrency] || 1
+             setExchangeRate(idrToUsd * usdToBase)
+         }
+      } else {
+         setExchangeRate(1)
+      }
       
       const ticker = Array.isArray(symbol) ? symbol[0] : symbol
       const { data: portfolios } = await supabase
@@ -50,7 +63,7 @@ export default function StockDetailPage() {
     }
 
     fetchDetails()
-  }, [user, symbol])
+  }, [user, symbol, baseCurrency])
 
   if (loading || !symbol) return <div className="spinner" />
 
@@ -85,7 +98,7 @@ export default function StockDetailPage() {
                 <h1 style={{ fontSize: 32, fontWeight: 800, margin: 0 }}>{tickerSymbol.split('.')[0]}</h1>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
                     <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>
-                        {livePrice?.price ? formatIDR(Number(livePrice.price)) : '---'}
+                        {livePrice?.price ? formatCurrency(Number(livePrice.price) * exchangeRate, baseCurrency) : '---'}
                     </div>
                     {livePrice && (
                         <div style={{ 
@@ -103,7 +116,7 @@ export default function StockDetailPage() {
         <div className="card" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.05) 100%)', border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Kepemilikan Saham</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: '#ec4899' }}>{totalLots} Lot</div>
-            <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>≈ {formatIDR(totalLots * 100 * (livePrice?.price || 0))}</div>
+            <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>≈ {formatCurrency(totalLots * 100 * (livePrice?.price || 0) * exchangeRate, baseCurrency)}</div>
         </div>
       </div>
 
@@ -121,11 +134,11 @@ export default function StockDetailPage() {
                     <div key={p.id} className="flex-between" style={{ padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
                         <div>
                             <div style={{ fontSize: 14, fontWeight: 600 }}>{p.accounts?.name}</div>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Avg: {formatIDR(p.average_price)}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Avg: {formatCurrency(p.average_price * exchangeRate, baseCurrency)}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                             <div style={{ fontSize: 14, fontWeight: 700 }}>{p.lots} Lot</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{formatIDR(p.lots * 100 * (livePrice?.price || 0))}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{formatCurrency(p.lots * 100 * (livePrice?.price || 0) * exchangeRate, baseCurrency)}</div>
                         </div>
                     </div>
                 ))}
@@ -139,11 +152,11 @@ export default function StockDetailPage() {
             <div className="grid-2" style={{ gap: 20 }}>
                 <div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Day Low</div>
-                    <div style={{ fontSize: 15, fontWeight: 700 }}>{livePrice?.low ? (livePrice.currency === 'USD' ? `$${livePrice.low.toLocaleString()}` : formatIDR(livePrice.low)) : '---'}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700 }}>{livePrice?.low ? formatCurrency(livePrice.low * exchangeRate, baseCurrency) : '---'}</div>
                 </div>
                 <div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Day High</div>
-                    <div style={{ fontSize: 15, fontWeight: 700 }}>{livePrice?.high ? (livePrice.currency === 'USD' ? `$${livePrice.high.toLocaleString()}` : formatIDR(livePrice.high)) : '---'}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700 }}>{livePrice?.high ? formatCurrency(livePrice.high * exchangeRate, baseCurrency) : '---'}</div>
                 </div>
                 <div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Volume</div>

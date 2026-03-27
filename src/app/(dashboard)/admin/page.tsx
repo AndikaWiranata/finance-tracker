@@ -2,13 +2,15 @@
 import { useEffect, useState, FormEvent } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
-import { formatIDR } from '@/lib/currency'
+import { formatCurrency, getFiatRates, convertToBase } from '@/lib/currency'
 import { Users, Landmark, Activity, Megaphone, CheckCircle2, AlertCircle, TrendingUp } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { Trash2, ShieldOff, Search, UserCheck } from 'lucide-react'
 
 export default function AdminDashboard() {
-  const { user, isAdmin, loading: authLoading } = useAuth()
+  const { user, profile, isAdmin, loading: authLoading } = useAuth()
+  const [exchangeRate, setExchangeRate] = useState(1)
+  const baseCurrency = profile?.base_currency || 'IDR'
   
   if (authLoading) return <div className="spinner" />
 
@@ -16,9 +18,9 @@ export default function AdminDashboard() {
     return (
       <div className="card empty-state" style={{ marginTop: 100 }}>
         <AlertCircle size={48} color="var(--red)" />
-        <h2 style={{ marginTop: 16 }}>Akses Ditolak</h2>
-        <p style={{ color: 'var(--text-muted)' }}>Halaman ini hanya untuk Administrator Utama.</p>
-        <a href="/" className="btn btn-primary" style={{ marginTop: 24 }}>Kembali ke Dashboard</a>
+        <h2 style={{ marginTop: 16 }}>Access Denied</h2>
+        <p style={{ color: 'var(--text-muted)' }}>This page is only for Main Administrators.</p>
+        <a href="/" className="btn btn-primary" style={{ marginTop: 24 }}>Return to Dashboard</a>
       </div>
     )
   }
@@ -43,9 +45,24 @@ export default function AdminDashboard() {
       const { data: usersData } = await supabase.from('accounts').select('user_id')
       const uniqueUsers = new Set((usersData || []).map(u => u.user_id)).size
 
-      // 2. Platform Total Balance
-      const { data: balanceData } = await supabase.from('accounts').select('balance')
-      const totalBal = (balanceData || []).reduce((s, a) => s + Number(a.balance), 0)
+      // 2. Platform Total Balance (Unified to IDR)
+      const { data: balanceData } = await supabase.from('accounts').select('balance, currency')
+      let totalBalIDR = 0
+      for (const a of (balanceData || [])) {
+        totalBalIDR += await convertToBase(Number(a.balance), a.currency || 'IDR', 'IDR')
+      }
+      
+      // Calculate exchangeRate for viewing AUM in profile currency
+      if (baseCurrency !== 'IDR') {
+        const rates = await getFiatRates()
+        if (rates) {
+          const idrToUsd = 1 / (rates['IDR'] || 15500)
+          const usdToBase = rates[baseCurrency] || 1
+          setExchangeRate(idrToUsd * usdToBase)
+        }
+      } else {
+        setExchangeRate(1)
+      }
 
       // 3. Total Transaction Count
       const { count: txCount } = await supabase.from('transactions').select('*', { count: 'exact', head: true })
@@ -63,7 +80,7 @@ export default function AdminDashboard() {
 
       setStats({
         totalUsers: uniqueUsers,
-        totalBalance: totalBal,
+        totalBalance: totalBalIDR,
         totalTransactions: txCount || 0,
         apiCrypto: cryptoRes ? 'active' : 'error',
         apiStocks: stockRes ? 'active' : 'error',
@@ -79,7 +96,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (user) loadAdminData()
-  }, [user])
+  }, [user, baseCurrency])
 
   const sendBroadcast = (e: FormEvent) => {
     e.preventDefault()
@@ -94,22 +111,22 @@ export default function AdminDashboard() {
   const toggleUserStatus = async (targetId: string, currentStatus: boolean) => {
     const { error } = await supabase.from('profiles').update({ is_disabled: !currentStatus }).eq('id', targetId)
     if (error) {
-      toast.error("Gagal update status: " + error.message)
+      toast.error("Failed to update status: " + error.message)
     } else {
-      toast.success(currentStatus ? "User diaktifkan kembali" : "User berhasil di-disable")
+      toast.success(currentStatus ? "User reactivated" : "User successfully disabled")
       loadAdminData()
     }
   }
 
   const deleteUserRecord = async (targetId: string) => {
-    if (!confirm("Hapus permanen data user ini? (Data di auth.users tetap ada kecuali dihapus via Dashboard Supabase)")) return
+    if (!confirm("Permanently delete this user data? (Auth data remains unless deleted via Supabase Dashboard)")) return
     
     // Note: Deleting from profiles is usually enough to "ghost" them if RLS depends on profiles
     const { error } = await supabase.from('profiles').delete().eq('id', targetId)
     if (error) {
-       toast.error("Gagal menghapus profile: " + error.message)
+       toast.error("Failed to delete profile: " + error.message)
     } else {
-       toast.success("Profile user berhasil dihapus")
+       toast.success("User profile successfully deleted")
        loadAdminData()
     }
   }
@@ -127,7 +144,7 @@ export default function AdminDashboard() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Admin Command Center</h1>
-          <p className="page-subtitle">Pusat kendali ekosistem aplikasi FinTrack</p>
+          <p className="page-subtitle">Command center for the FinTrack ecosystem</p>
         </div>
         <button className="btn btn-ghost" onClick={loadAdminData}>Refresh Stats</button>
       </div>
@@ -150,11 +167,11 @@ export default function AdminDashboard() {
           </div>
           <div>
             <div style={{ fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-              AUM (Total Balance)
+              AUM (Platform Total)
               <AlertCircle size={12} style={{ cursor: 'help' }} />
             </div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--green)' }}>{formatIDR(stats.totalBalance)}</div>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>*Bank, E-Wallet, & Cash (IDR)</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--green)' }}>{formatCurrency(stats.totalBalance * exchangeRate, baseCurrency)}</div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>*All accounts unified to {baseCurrency}</div>
           </div>
         </div>
 
@@ -165,7 +182,7 @@ export default function AdminDashboard() {
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', marginBottom: 2 }}>COMING SOON</div>
             <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Total Market Value</div>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>Estimasi Aset Investasi</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>Estimated Investment Assets</div>
           </div>
         </div>
 
@@ -190,18 +207,18 @@ export default function AdminDashboard() {
           </div>
           <form onSubmit={sendBroadcast}>
             <div className="form-group">
-              <label className="form-label">Tulis pesan untuk semua user aktif</label>
+              <label className="form-label">Write a message for all active users</label>
               <textarea
                 className="form-input"
                 rows={3}
                 style={{ resize: 'none', background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}
-                placeholder="Contoh: Aplikasi akan maintenance jam 12 malam nanti..."
+                placeholder="Example: The app will be down for maintenance at midnight..."
                 value={broadcastMsg}
                 onChange={e => setBroadcastMsg(e.target.value)}
               />
             </div>
             <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: 10 }} disabled={!broadcastMsg}>
-              Kirim Ke Seluruh User (Push Toast)
+              Send to All Users (Push Toast)
             </button>
           </form>
         </div>
@@ -245,7 +262,7 @@ export default function AdminDashboard() {
             </div>
 
             <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>
-              Jika status <strong>Error</strong>, kemungkinan API limit tercapai atau service sedang down.
+              If the status is <strong>Error</strong>, it's possible the API limit has been reached or the service is down.
             </p>
           </div>
         </div>
@@ -262,7 +279,7 @@ export default function AdminDashboard() {
              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
              <input 
                type="text" 
-               placeholder="Cari Username/Email..." 
+               placeholder="Search Username/Email..." 
                className="form-input" 
                style={{ paddingLeft: 32, fontSize: 12, height: 32, width: 250 }}
                value={userSearch}
@@ -285,7 +302,7 @@ export default function AdminDashboard() {
               {filteredUsers.length === 0 ? (
                 <tr>
                    <td colSpan={4} style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
-                     Tidak ada user ditemukan.
+                     No users found.
                    </td>
                 </tr>
               ) : (
@@ -315,7 +332,7 @@ export default function AdminDashboard() {
                             className="btn btn-ghost btn-sm" 
                             style={{ color: u.is_disabled ? 'var(--green)' : 'var(--red)', padding: '4px 8px' }}
                             onClick={() => toggleUserStatus(u.id, !!u.is_disabled)}
-                            title={u.is_disabled ? "Aktifkan" : "Disable"}
+                            title={u.is_disabled ? "Activate" : "Disable"}
                           >
                             {u.is_disabled ? <UserCheck size={16} /> : <ShieldOff size={16} />}
                           </button>
@@ -323,7 +340,7 @@ export default function AdminDashboard() {
                             className="btn btn-ghost btn-sm" 
                             style={{ color: 'var(--red)', padding: '4px 8px' }}
                             onClick={() => deleteUserRecord(u.id)}
-                            title="Hapus Profile"
+                            title="Delete Profile"
                             disabled={u.is_admin} // Don't allow deleting self/other admins via UI easily
                           >
                             <Trash2 size={16} />
@@ -342,7 +359,7 @@ export default function AdminDashboard() {
       <div className="card" style={{ marginTop: 24 }}>
         <h3 style={{ margin: '0 0 16px', fontSize: 16 }}>Recent Platform Activity</h3>
         <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', border: '1px dashed var(--border)', borderRadius: 8 }}>
-          Audit Logs akan muncul di sini (Fitur selanjutnya)
+          Audit Logs will appear here (Next feature)
         </div>
       </div>
     </div>
