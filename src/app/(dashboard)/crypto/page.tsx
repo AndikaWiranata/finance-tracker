@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { formatNumberInput, parseNumberInput } from '@/lib/currency'
+import CurrencyInput from '@/components/CurrencyInput'
 import { Account, CryptoWallet } from '@/types'
 import { Bitcoin, Plus, X, Edit2, Check } from 'lucide-react'
 import { toast } from 'react-hot-toast'
@@ -306,8 +307,8 @@ export default function CryptoPage() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Total Balance</label>
-                  <input className="form-input" type="text" placeholder="0" required
-                    value={form.balance} onChange={e => setForm(f => ({ ...f, balance: formatNumberInput(e.target.value) }))} />
+                  <CurrencyInput className="form-input" placeholder="0" required
+                    value={form.balance} onValueChange={val => setForm(f => ({ ...f, balance: val }))} />
                 </div>
               </div>
               <div className="flex gap-3 mt-4" style={{ justifyContent: 'flex-end' }}>
@@ -338,8 +339,8 @@ export default function CryptoPage() {
 
             <div className="form-group">
               <label className="form-label">New Total Balance ({updatingWl.coin_symbol})</label>
-              <input className="form-input" type="text" autoFocus
-                value={updateForm.balance} onChange={e => setUpdateForm(f => ({ ...f, balance: formatNumberInput(e.target.value) }))} />
+              <CurrencyInput className="form-input" autoFocus
+                value={updateForm.balance} onValueChange={val => setUpdateForm(f => ({ ...f, balance: val }))} />
 
               {/* Delta Preview */}
               {(() => {

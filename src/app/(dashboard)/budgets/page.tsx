@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { formatNumberInput, parseNumberInput } from '@/lib/currency'
+import CurrencyInput from '@/components/CurrencyInput'
 import { Plus, X, PieChart, AlertTriangle, CheckCircle, TrendingDown, Wallet, ArrowRight } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 
@@ -231,7 +232,7 @@ export default function BudgetsPage() {
               )}
               <div className="form-group">
                 <label className="form-label">Limit Anggaran Bulanan (Rp)</label>
-                <input type="text" className="form-input" required autoFocus value={form.amount} onChange={e => setForm({...form, amount: formatNumberInput(e.target.value)})} />
+                <CurrencyInput className="form-input" required autoFocus value={form.amount} onValueChange={val => setForm({...form, amount: val})} />
               </div>
               <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 20, fontStyle: 'italic' }}>
                 *Anggaran akan dihitung otomatis berdasarkan transaksi pengeluaran kamu di bulan ini.

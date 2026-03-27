@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { formatNumberInput, parseNumberInput } from '@/lib/currency'
+import CurrencyInput from '@/components/CurrencyInput'
 import { Account } from '@/types'
 import { Plus, X, Calendar, RefreshCw, Trash2, ArrowLeft, AlertCircle, Clock } from 'lucide-react'
 import { toast } from 'react-hot-toast'
@@ -217,10 +218,10 @@ export default function RecurringPage() {
               <div className="grid-2">
                 <div className="form-group">
                   <label className="form-label">Jumlah (Rp)</label>
-                  <input 
-                    type="text" className="form-input" required
+                  <CurrencyInput 
+                    className="form-input" required
                     value={form.amount}
-                    onChange={e => setForm({...form, amount: formatNumberInput(e.target.value)})}
+                    onValueChange={val => setForm({...form, amount: val})}
                   />
                 </div>
                 <div className="form-group">

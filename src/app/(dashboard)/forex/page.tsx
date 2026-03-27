@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { convertToIDR, formatNumberInput, parseNumberInput } from '@/lib/currency'
+import CurrencyInput from '@/components/CurrencyInput'
 import { Account, ForexAccount } from '@/types'
 import { Plus, X, Edit2, Check, ArrowDownUp } from 'lucide-react'
 import { toast } from 'react-hot-toast'
@@ -217,8 +218,8 @@ export default function ForexPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">Broker Balance</label>
-                <input className="form-input" type="text" placeholder="1.000" required
-                  value={form.balance} onChange={e => setForm(f => ({ ...f, balance: formatNumberInput(e.target.value) }))} />
+                <CurrencyInput className="form-input" placeholder="1.000" required
+                  value={form.balance} onValueChange={val => setForm(f => ({ ...f, balance: val }))} />
               </div>
               <div className="flex gap-3 mt-4" style={{ justifyContent: 'flex-end' }}>
                 <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
@@ -248,8 +249,8 @@ export default function ForexPage() {
 
             <div className="form-group">
               <label className="form-label">New Balance ({updatingFx.currency_pair.split('/')[0]})</label>
-              <input className="form-input" type="text" autoFocus
-                value={updateForm.balance} onChange={e => setUpdateForm(f => ({ ...f, balance: formatNumberInput(e.target.value) }))} />
+              <CurrencyInput className="form-input" autoFocus
+                value={updateForm.balance} onValueChange={val => setUpdateForm(f => ({ ...f, balance: val }))} />
               
               {/* Delta Preview */}
               {(() => {

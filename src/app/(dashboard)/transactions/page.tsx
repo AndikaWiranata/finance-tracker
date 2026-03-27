@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { formatNumberInput, parseNumberInput } from '@/lib/currency'
+import CurrencyInput from '@/components/CurrencyInput'
 import { Account, Transaction } from '@/types'
 import { Plus, X, ArrowLeftRight, Filter, Pencil, Trash2, AlertTriangle, RefreshCw } from 'lucide-react'
 import { toast } from 'react-hot-toast'
@@ -572,8 +573,8 @@ export default function TransactionsPage() {
               <div className="form-row">
                 <div className="form-group">
                   <label className="form-label">Amount</label>
-                  <input className="form-input" type="text" placeholder="0" required autoFocus
-                    value={form.amount} onChange={e => setForm(f => ({ ...f, amount: formatNumberInput(e.target.value) }))} />
+                  <CurrencyInput className="form-input" placeholder="0" required autoFocus
+                    value={form.amount} onValueChange={val => setForm(f => ({ ...f, amount: val }))} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Category</label>
@@ -648,8 +649,8 @@ export default function TransactionsPage() {
               <div className="form-row">
                 <div className="form-group">
                   <label className="form-label">Amount</label>
-                  <input className="form-input" type="text" placeholder="0" required autoFocus
-                    value={transferForm.amount} onChange={e => setTransferForm(f => ({ ...f, amount: formatNumberInput(e.target.value) }))} />
+                  <CurrencyInput className="form-input" placeholder="0" required autoFocus
+                    value={transferForm.amount} onValueChange={val => setTransferForm(f => ({ ...f, amount: val }))} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Date</label>
