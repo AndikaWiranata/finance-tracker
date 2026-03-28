@@ -74,25 +74,33 @@ export default function CryptoPage() {
     }))
     setWallets(mapped)
 
-    // Fetch live prices for the balances
+    const { data: { session } } = await supabase.auth.getSession()
+
+    // Fetch live prices for all wallets in a single batch call
     const rts: Record<number, RateData> = {}
-    for (const wl of mapped) {
+    if (mapped.length > 0) {
+      const symbols = [...new Set(mapped.map(w => w.coin_symbol))].join(',')
       try {
-        const { data: { session } } = await supabase.auth.getSession()
-        const res = await fetch(`/api/crypto?coin=${wl.coin_symbol}`, {
+        const res = await fetch(`/api/crypto?coin=${symbols}`, {
           headers: { 'Authorization': `Bearer ${session?.access_token}` }
         })
         const data = await res.json()
-        rts[wl.id] = {
-          usd: (wl.balance || 0) * (data.price_usd || 0),
-          idr: (wl.balance || 0) * (data.price_idr || 0),
-          priceUSD: data.price_usd || 0,
-          priceIDR: data.price_idr || 0,
-          change24hIDR: (wl.balance || 0) * (data.change_24h_idr || 0),
-          change24hPct: data.change_24h_pct || 0
+        
+        for (const wl of mapped) {
+          const coinData = symbols.includes(',') ? data[wl.coin_symbol] : data
+          if (coinData) {
+            rts[wl.id] = {
+              usd: (wl.balance || 0) * (coinData.price_usd || 0),
+              idr: (wl.balance || 0) * (coinData.price_idr || 0),
+              priceUSD: coinData.price_usd || 0,
+              priceIDR: coinData.price_idr || 0,
+              change24hIDR: (wl.balance || 0) * (coinData.change_24h_idr || 0),
+              change24hPct: coinData.change_24h_pct || 0
+            }
+          }
         }
       } catch (e) {
-        console.error('Error loading crypto rate:', e)
+        console.error('Error fetching crypto batch:', e)
       }
     }
     setRates(rts)

@@ -74,27 +74,28 @@ export default function DashboardPage() {
       }
 
       const todayStr = getLocalDateISO()
-      const [{ data: accs }, { data: txns }, { data: todayTx }, { data: cryptoW }, { data: forexA }, { data: stockP }, { data: historyTx }, { data: snapshots }] = await Promise.all([
+      
+      // Parallelize all initial data fetching including auth session
+      const [
+        { data: accs }, 
+        { data: txns }, 
+        { data: todayTx }, 
+        { data: cryptoW }, 
+        { data: forexA }, 
+        { data: stockP }, 
+        { data: historyTx }, 
+        { data: snapshots },
+        { data: { session } }
+      ] = await Promise.all([
         supabase.from('accounts').select('*').eq('user_id', user.id),
-        supabase.from('transactions')
-          .select('*, accounts(name, currency)')
-          .order('date', { ascending: false })
-          .limit(8),
-        supabase.from('transactions')
-          .select('amount, type, accounts(type)')
-          .eq('user_id', user.id)
-          .eq('date', todayStr),
+        supabase.from('transactions').select('*, accounts(name, currency)').order('date', { ascending: false }).limit(8),
+        supabase.from('transactions').select('amount, type, accounts(type)').eq('user_id', user.id).eq('date', todayStr),
         supabase.from('crypto_wallets').select('*').eq('user_id', user.id),
         supabase.from('forex_accounts').select('*').eq('user_id', user.id),
         supabase.from('stock_portfolios').select('*').eq('user_id', user.id),
-        supabase.from('transactions')
-          .select('amount, type, date')
-          .eq('user_id', user.id)
-          .order('date', { ascending: false }),
-        supabase.from('net_worth_snapshots')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('date', { ascending: true })
+        supabase.from('transactions').select('amount, type, date').eq('user_id', user.id).order('date', { ascending: false }),
+        supabase.from('net_worth_snapshots').select('*').eq('user_id', user.id).order('date', { ascending: true }),
+        supabase.auth.getSession()
       ])
       
       const loadedAccs = accs ?? []
@@ -114,61 +115,71 @@ export default function DashboardPage() {
       })
 
       const accsWithIdr = loadedAccs.map((a: any) => ({ ...a, idrValue: 0 }))
-
-      let total = 0
       let totalFloating = 0
-      for (const a of accsWithIdr) {
-        if (a.type !== 'crypto' && a.type !== 'forex' && a.type !== 'stock') {
-          a.idrValue = await convertToBase(Number(a.balance), a.currency || 'IDR', 'IDR')
-          total += a.idrValue
-        }
-      }
 
-      for (const w of (cryptoW ?? [])) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession()
-          const res = await fetch(`/api/crypto?coin=${w.coin_symbol}`, {
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
-          })
-          const data = await res.json()
-          const val = (w.balance || 0) * Number(data.price_idr || 0)
-          const pnl24h = (w.balance || 0) * Number(data.change_24h_idr || 0)
-          total += val
-          totalFloating += pnl24h
-          if (!catStats['crypto']) catStats['crypto'] = { income: 0, expense: 0, pnl: 0 }
-          catStats['crypto'].pnl += pnl24h
-          const target = accsWithIdr.find((a: any) => a.id === w.account_id)
-          if (target) target.idrValue += val
-        } catch (e) {}
-      }
+      // Process asset types in parallel
+      await Promise.all([
+        // 1. Fiat Accounts
+        ...accsWithIdr
+          .filter(a => a.type !== 'crypto' && a.type !== 'forex' && a.type !== 'stock')
+          .map(async (a) => {
+            a.idrValue = await convertToBase(Number(a.balance), a.currency || 'IDR', 'IDR')
+          }),
 
-      for (const f of (forexA ?? [])) {
-        try {
-          const base = f.currency_pair.split('/')[0] || 'USD'
-          const val = await convertToBase(Number(f.equity), base.includes('IDR') ? 'USD' : base, 'IDR')
-          total += val
-          const target = accsWithIdr.find((a: any) => a.id === f.account_id)
-          if (target) target.idrValue += val
-        } catch (e) {}
-      }
+        // 2. Crypto Wallets (Batch Fetch)
+        (async () => {
+          const wallets = cryptoW ?? []
+          if (wallets.length === 0) return
+          try {
+            const symbols = Array.from(new Set(wallets.map(w => w.coin_symbol))).join(',')
+            const res = await fetch(`/api/crypto?coin=${symbols}`, {
+              headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            })
+            const data = await res.json()
+            for (const w of wallets) {
+              const coinData = symbols.includes(',') ? data[w.coin_symbol] : data
+              if (coinData) {
+                const val = (w.balance || 0) * Number(coinData.price_idr || 0)
+                const pnl24h = (w.balance || 0) * Number(coinData.change_24h_idr || 0)
+                totalFloating += pnl24h
+                if (!catStats['crypto']) catStats['crypto'] = { income: 0, expense: 0, pnl: 0 }
+                catStats['crypto'].pnl += pnl24h
+                const tgt = accsWithIdr.find((a: any) => a.id === w.account_id)
+                if (tgt) tgt.idrValue += val
+              }
+            }
+          } catch (e) { console.error('Crypto batch failed', e) }
+        })(),
 
-      for (const s of (stockP ?? [])) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession()
-          const res = await fetch(`/api/stocks?ticker=${s.ticker}`, {
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
-          })
-          const data = await res.json()
-          const val = (s.lots || 0) * 100 * Number(data.price || s.average_price || 0)
-          const pnl24h = (s.lots || 0) * 100 * Number(data.change || 0)
-          total += val
-          totalFloating += pnl24h
-          if (!catStats['stock']) catStats['stock'] = { income: 0, expense: 0, pnl: 0 }
-          catStats['stock'].pnl += pnl24h
-          const target = accsWithIdr.find((a: any) => a.id === s.account_id)
-          if (target) target.idrValue += val
-        } catch (e) {}
-      }
+        // 3. Forex Accounts
+        ...(forexA ?? []).map(async (f) => {
+          try {
+            const base = f.currency_pair.split('/')[0] || 'USD'
+            const val = await convertToBase(Number(f.equity), base.includes('IDR') ? 'USD' : base, 'IDR')
+            const tgt = accsWithIdr.find((a: any) => a.id === f.account_id)
+            if (tgt) tgt.idrValue += val
+          } catch (e) {}
+        }),
+
+        // 4. Stock Portfolios (Parallel requests as API doesn't support batch yet)
+        ...(stockP ?? []).map(async (s) => {
+          try {
+            const res = await fetch(`/api/stocks?ticker=${s.ticker}`, {
+              headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            })
+            const d = await res.json()
+            const val = (s.lots || 0) * 100 * Number(d.price || s.average_price || 0)
+            const pnl24h = (s.lots || 0) * 100 * Number(d.change || 0)
+            totalFloating += pnl24h
+            if (!catStats['stock']) catStats['stock'] = { income: 0, expense: 0, pnl: 0 }
+            catStats['stock'].pnl += pnl24h
+            const tgt = accsWithIdr.find((a: any) => a.id === s.account_id)
+            if (tgt) tgt.idrValue += val
+          } catch (e) {}
+        })
+      ])
+
+      const total = accsWithIdr.reduce((sum, a) => sum + (a.idrValue || 0), 0)
 
       setCategoryStats(catStats)
       setAccounts(accsWithIdr)

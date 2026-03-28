@@ -25,40 +25,41 @@ export default function CryptoDetailPage() {
         async function fetchDetails() {
             if (!user || !symbol) return
 
-            if (baseCurrency !== 'IDR') {
-               const frates = await getFiatRates()
-               if (frates) {
-                   const idrToUsd = 1 / (frates['IDR'] || 15500)
-                   const usdToBase = frates[baseCurrency] || 1
-                   setExchangeRate(idrToUsd * usdToBase)
-               }
-            } else {
-               setExchangeRate(1)
-            }
-
-            const { data: wallets } = await supabase
-                .from('crypto_wallets')
-                .select('*, accounts(name)')
-                .eq('user_id', user.id)
-                .eq('coin_symbol', symbol)
-
-            if (wallets) {
-                const total = wallets.reduce((acc, curr) => acc + Number(curr.balance), 0)
-                setTotalBalance(total)
-                setAssetData(wallets)
-            }
-
-            // Fetch Live Price
             try {
-                const { data: { session } } = await supabase.auth.getSession()
+                // Parallelize initial necessary data
+                const [frates, { data: wallets }, { data: { session } }] = await Promise.all([
+                    getFiatRates(),
+                    supabase.from('crypto_wallets').select('*, accounts(name)').eq('user_id', user.id).eq('coin_symbol', symbol),
+                    supabase.auth.getSession()
+                ])
+
+                // Process Exchange Rate
+                if (baseCurrency !== 'IDR' && frates) {
+                    const idrToUsd = 1 / (frates['IDR'] || 15500)
+                    const usdToBase = frates[baseCurrency] || 1
+                    setExchangeRate(idrToUsd * usdToBase)
+                } else {
+                    setExchangeRate(1)
+                }
+
+                // Process Wallets
+                if (wallets) {
+                    const total = wallets.reduce((acc, curr) => acc + Number(curr.balance), 0)
+                    setTotalBalance(total)
+                    setAssetData(wallets)
+                }
+
+                // Fetch Live Price (requires session)
                 const res = await fetch(`/api/crypto?coin=${symbol}`, {
                     headers: { 'Authorization': `Bearer ${session?.access_token}` }
                 })
                 const data = await res.json()
                 setLivePrice(data)
-            } catch (e) { }
-
-            setLoading(false)
+            } catch (e) {
+                console.error('Error fetching crypto details:', e)
+            } finally {
+                setLoading(false)
+            }
         }
 
         fetchDetails()

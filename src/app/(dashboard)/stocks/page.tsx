@@ -111,7 +111,7 @@ export default function StocksPage() {
       account_id: parseInt(form.account_id),
       user_id: user.id,
       ticker: (form.currency === 'IDR' && !form.ticker.includes('.')) ? `${form.ticker.toUpperCase()}.JK` : form.ticker.toUpperCase(),
-      lots: parseInt(form.lots),
+      lots: parseFloat(form.lots) || 0,
       average_price: parseFloat(parseNumberInput(form.avgPrice, form.currency)),
     })
     setForm(f => ({ ...f, ticker: '', lots: '', avgPrice: '' }))
@@ -123,7 +123,7 @@ export default function StocksPage() {
    async function saveEdit(id: number) {
     const st = stocks.find(s => s.id === id)
     await supabase.from('stock_portfolios').update({ 
-      lots: parseInt(editForm.lots) || 0,
+      lots: parseFloat(editForm.lots) || 0,
       average_price: parseFloat(parseNumberInput(editForm.avgPrice, st?.ticker?.includes('.JK') ? 'IDR' : 'USD')) || 0
     }).eq('id', id)
     setEditing(null)
@@ -181,12 +181,14 @@ export default function StocksPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {stocks.map(st => {
             const live = liveData[st.id]
+            const multiplier = st.ticker?.includes('.JK') ? 100 : 1
             const currentPrice = live?.price || st.average_price
-            const totalValue = st.lots * 100 * currentPrice
-            const investedVal = st.lots * 100 * (st.average_price * (live?.rate || 1))
+            const totalShares = st.lots * multiplier
+            const totalValue = totalShares * currentPrice
+            const investedVal = totalShares * (st.average_price * (live?.rate || 1))
             const profitLoss = totalValue - investedVal
-            const plPercent = profitLoss / investedVal
-            const dailyPNL = st.lots * 100 * (live?.change || 0)
+            const plPercent = investedVal === 0 ? 0 : profitLoss / investedVal
+            const dailyPNL = totalShares * (live?.change || 0)
             
             return (
               <div 
@@ -205,7 +207,7 @@ export default function StocksPage() {
                   <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{st.ticker}</div>
                   <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>{st.accountName}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                    {st.lots} Lots ({st.lots * 100} Shares) &middot; Avg Cost {st.ticker.includes('.JK') ? formatCurrency(st.average_price * exchangeRate, baseCurrency) : `$${st.average_price.toLocaleString()}`}
+                    {st.ticker?.includes('.JK') ? `${st.lots} Lots (${totalShares} Shares)` : `${st.lots} Shares`} &middot; Avg Cost {st.ticker?.includes('.JK') ? formatCurrency(st.average_price * exchangeRate, baseCurrency) : `$${st.average_price.toLocaleString()}`}
                   </div>
                 </div>
                 
@@ -229,7 +231,7 @@ export default function StocksPage() {
                 <div style={{ textAlign: 'right', display: 'flex', gap: 16, alignItems: 'center' }}>
                   {editing === st.id ? (
                     <div className="flex gap-2" style={{ alignItems: 'center' }}>
-                      <input className="form-input" type="number" placeholder="Lots" style={{ width: 70, padding: '6px 10px' }}
+                      <input className="form-input" type="number" step="any" placeholder={st.ticker?.includes('.JK') ? "Lots" : "Shares"} style={{ width: 70, padding: '6px 10px' }}
                         value={editForm.lots} onChange={e => setEditForm(f => ({ ...f, lots: e.target.value }))} />
                       <CurrencyInput className="form-input" placeholder="Avg Price" style={{ width: 100, padding: '6px 10px' }}
                         currency={st.ticker.includes('.JK') ? 'IDR' : 'USD'}
@@ -293,10 +295,12 @@ export default function StocksPage() {
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">Total Lots</label>
-                  <input className="form-input" type="number" min="1" placeholder="10" required
+                  <label className="form-label">{form.ticker?.toUpperCase().includes('.JK') || (form.currency === 'IDR' && !form.ticker.includes('.')) ? "Lots" : "Shares"}</label>
+                  <input className="form-input" type="number" step="any" placeholder={form.currency === 'IDR' ? "10" : "2.5"} required
                     value={form.lots} onChange={e => setForm(f => ({ ...f, lots: e.target.value }))} />
-                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>1 Lot = 100 Shares</p>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {form.ticker?.toUpperCase().includes('.JK') || (form.currency === 'IDR' && !form.ticker.includes('.')) ? "1 Lot = 100 Shares" : "Enter as individual shares"}
+                  </p>
                 </div>
                 <div className="form-group">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
