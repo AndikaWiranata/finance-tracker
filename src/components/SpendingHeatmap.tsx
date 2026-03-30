@@ -207,6 +207,7 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
             background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: 20px;
+            overflow: hidden; /* Prevent internal overflow from breaking layout */
         }
         .heatmap-header {
             margin-bottom: 24px;
@@ -218,6 +219,8 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
         }
         .title {
             font-size: 18px;
@@ -245,12 +248,14 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
         }
         .month-nav button:hover:not(:disabled) { background: var(--bg-hover); }
         .month-nav button:disabled { opacity: 0.2; }
-        .month-nav span { font-size: 13px; font-weight: 700; min-width: 120px; text-align: center; }
+        .month-nav span { font-size: 13px; font-weight: 700; min-width: 100px; text-align: center; }
 
         .header-bottom {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
         }
         .legend { display: flex; gap: 12px; }
         .legend-item { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; font-weight: 600; }
@@ -258,7 +263,7 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
         .dot.deficit { background: #ef4444; }
         .dot.surplus { background: #22c55e; }
 
-        .summary-row { display: flex; gap: 8px; }
+        .summary-row { display: flex; gap: 8px; flex-wrap: wrap; }
         .badge {
             display: flex;
             align-items: center;
@@ -339,10 +344,27 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
         .tt-row.net.red { color: #ef4444; }
 
         @media (max-width: 600px) {
+            .heatmap-container { padding: 16px; border-radius: 12px; }
             .calendar-grid { gap: 4px; }
+            .day-cell { padding: 4px; }
+            .d-num { font-size: 9px; }
+            .s-in, .s-out { font-size: 7px; }
+            .badge { padding: 4px 8px; }
             .badge span { font-size: 10px; }
-            .header-bottom { flex-direction: column; align-items: flex-start; gap: 12px; }
+            .header-top { flex-direction: column; align-items: stretch; }
+            .title { text-align: center; }
+            .month-nav { justify-content: center; width: 100%; }
+            .header-bottom { flex-direction: column; align-items: center; gap: 12px; }
+            .legend { width: 100%; justify-content: center; }
+            .summary-row { width: 100%; justify-content: center; }
+            .d-data { display: none; } /* On very small mobile, hide specific amounts to prevent overflow, rely on color and tooltip */
         }
+        
+        @media (max-width: 400px) {
+            .summary-row { display: grid; grid-template-columns: 1fr 1fr; }
+            .badge.net { grid-column: span 2; justify-content: center; }
+        }
+
       `}</style>
     </div>
   )

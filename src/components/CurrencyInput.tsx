@@ -81,7 +81,7 @@ export default function CurrencyInput({ value, onValueChange, currency = 'IDR', 
         onChange={handleChange}
         style={{ 
           ...props.style,
-          paddingLeft: symbol.length > 2 ? 45 : 36 
+          paddingLeft: symbol.length === 1 ? 32 : (symbol.length * 10 + 20)
         }}
       />
     </div>

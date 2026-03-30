@@ -284,7 +284,7 @@ function TransactionsContent() {
   async function submitTransfer(e: React.FormEvent) {
     if (!user) return
     e.preventDefault()
-    const amount = parseFloat(parseNumberInput(transferForm.amount)) || 0
+    const amount = parseFloat(parseNumberInput(transferForm.amount, baseCurrency)) || 0
     if (amount <= 0) {
       toast.error('Transfer amount must be greater than 0')
       return

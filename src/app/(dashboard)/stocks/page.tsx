@@ -250,7 +250,7 @@ export default function StocksPage() {
                         <button className="btn btn-ghost btn-sm" onClick={(e) => {
                           e.stopPropagation()
                           setEditing(st.id)
-                          setEditForm({ lots: String(st.lots), avgPrice: String(st.average_price) })
+                          setEditForm({ lots: String(st.lots), avgPrice: formatNumberInput(st.average_price, st.ticker.includes('.JK') ? 'IDR' : 'USD') })
                         }}>
                           <Edit2 size={13} />
                         </button>

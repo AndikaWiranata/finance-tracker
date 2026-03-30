@@ -146,7 +146,7 @@ export default function AccountsPage() {
       name: acc.name,
       type: acc.type,
       currency: acc.currency,
-      balance: formatNumberInput(acc.balance)
+      balance: formatNumberInput(acc.balance, acc.currency)
     })
     setShowModal(true)
   }

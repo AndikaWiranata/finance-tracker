@@ -117,7 +117,7 @@ export default function CryptoPage() {
       account_id: parseInt(form.account_id),
       user_id: user.id,
       coin_symbol: form.coin_symbol.toUpperCase(),
-      balance: parseFloat(parseNumberInput(form.balance)) || 0,
+      balance: parseFloat(parseNumberInput(form.balance, form.coin_symbol)) || 0,
     })
     setForm(f => ({ ...f, balance: '' }))
     setShowModal(false)
@@ -128,7 +128,7 @@ export default function CryptoPage() {
   async function saveUpdate() {
     if (!user || !updatingWl) return
     setSaving(true)
-    const newVal = parseFloat(parseNumberInput(updateForm.balance)) || 0
+    const newVal = parseFloat(parseNumberInput(updateForm.balance, updatingWl.coin_symbol)) || 0
     const oldVal = Number(updatingWl.balance)
     const delta = newVal - oldVal
 
@@ -263,7 +263,7 @@ export default function CryptoPage() {
                   <button className="btn btn-ghost btn-sm" onClick={(e) => {
                     e.stopPropagation()
                     setUpdatingWl(wl)
-                    setUpdateForm({ balance: formatNumberInput(wl.balance || 0), isProfitLoss: true })
+                    setUpdateForm({ balance: formatNumberInput(wl.balance || 0, wl.coin_symbol), isProfitLoss: true })
                   }}>
                     <Edit2 size={13} />
                   </button>
@@ -365,7 +365,7 @@ export default function CryptoPage() {
 
               {/* Delta Preview */}
               {(() => {
-                const newVal = parseFloat(parseNumberInput(updateForm.balance)) || 0
+                const newVal = parseFloat(parseNumberInput(updateForm.balance, updatingWl.coin_symbol)) || 0
                 const delta = newVal - Number(updatingWl.balance)
                 if (Math.abs(delta) < 0.00000001) return null
                 const priceIDR = rates[updatingWl.id]?.priceIDR || 0

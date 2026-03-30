@@ -216,7 +216,7 @@ export default function ForexPage() {
                   <button className="btn btn-ghost btn-sm" onClick={() => {
                     setUpdatingFx(fx)
                     setUpdateForm({
-                      balance: formatNumberInput(fx.balance || 0),
+                      balance: formatNumberInput(fx.balance || 0, fx.currency_pair.split('/')[0]),
                       isProfitLoss: true
                     })
                   }}>
@@ -296,7 +296,7 @@ export default function ForexPage() {
 
               {/* Delta Preview */}
               {(() => {
-                const newVal = parseFloat(parseNumberInput(updateForm.balance)) || 0
+                const newVal = parseFloat(parseNumberInput(updateForm.balance, updatingFx.currency_pair.split('/')[0])) || 0
                 const delta = newVal - Number(updatingFx.balance)
                 if (Math.abs(delta) < 0.00000001) return null
                 return (

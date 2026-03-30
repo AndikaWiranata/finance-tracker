@@ -14,11 +14,7 @@ export async function getFiatRates() {
     const data = await res.json()
     cachedRates = data.rates
     
-    // Enrich with Metals & Crypto for Forex (Approximate for free tier API fallback)
-    // 1 XAU ~ 2500 USD
-    if (cachedRates && (!cachedRates.XAU || cachedRates.XAU === 1)) {
-       cachedRates.XAU = 1 / 2500 // 1 USD = ~0.0004 XAU
-    }
+    // Enrich with Crypto (Approximate for free tier API fallback)
     // Bitcoin & Ethereum
     try {
       if (cachedRates) {
