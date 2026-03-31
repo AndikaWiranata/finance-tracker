@@ -19,8 +19,9 @@ function formatDate(d: string) {
 const LIQUID_TYPES = ['bank', 'cash', 'ewallet']
 
 const CATEGORIES = {
-  income:  ['Salary', 'Freelance', 'Investment', 'Gift', 'Bonus'],
-  expense: ['Food', 'Transport', 'Shopping', 'Entertainment', 'Health', 'Bills', 'Education'],
+  income:   ['Salary', 'Freelance', 'Investment', 'Gift', 'Bonus'],
+  expense:  ['Food', 'Transport', 'Shopping', 'Entertainment', 'Health', 'Bills', 'Education'],
+  transfer: ['Transfer Out', 'Transfer In']
 }
 
 export default function TransactionsPage() {
@@ -49,7 +50,7 @@ function TransactionsContent() {
   const [customEnd, setCustomEnd] = useState<string>('')
   const [form, setForm] = useState({
     account_id: '',
-    type: 'expense' as 'income' | 'expense',
+    type: 'expense' as 'income' | 'expense' | 'transfer',
     amount: '',
     category: 'Food',
     note: '',
@@ -304,7 +305,9 @@ function TransactionsContent() {
       from_acc_id: parseInt(transferForm.from_id),
       to_acc_id: parseInt(transferForm.to_id),
       user_id_val: user.id,
-      amount_val: await convertToBase(amount, baseCurrency, fromAcc.currency || 'IDR'),
+      amount_from: await convertToBase(amount, baseCurrency, fromAcc.currency || 'IDR'),
+      amount_to: await convertToBase(amount, baseCurrency, toAcc.currency || 'IDR'),
+      amount_idr: await convertToBase(amount, baseCurrency, 'IDR'),
       note_val: transferForm.note ? ': ' + transferForm.note : '',
       date_val: transferForm.date
     })
@@ -503,8 +506,8 @@ function TransactionsContent() {
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t.accounts?.name}</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div className={t.type === 'income' ? 'amount-income' : 'amount-expense'} style={{ fontWeight: 700 }}>
-                        {t.type === 'income' ? '+' : '-'}{formatCurrency(Number(t.amount) * exchangeRate, baseCurrency)}
+                      <div className={t.type === 'transfer' ? 'amount-transfer' : (t.type === 'income' ? 'amount-income' : 'amount-expense')} style={{ fontWeight: 700 }}>
+                        {t.type === 'transfer' ? '' : (t.type === 'income' ? '+' : '-')}{formatCurrency(Number(t.amount) * exchangeRate, baseCurrency)}
                       </div>
                       <div className="flex gap-2 mt-2" style={{ justifyContent: 'flex-end' }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => startEdit(t)} style={{ padding: 4 }}><Pencil size={13} /></button>
@@ -539,8 +542,8 @@ function TransactionsContent() {
                         {t.note ?? <span style={{ color: 'var(--text-muted)' }}>—</span>}
                       </td>
                       <td><span className={`badge badge-${t.type}`}>{t.type}</span></td>
-                      <td style={{ textAlign: 'right' }} className={t.type === 'income' ? 'amount-income' : 'amount-expense'}>
-                        {t.type === 'income' ? '+' : '-'}{formatCurrency(Number(t.amount) * exchangeRate, baseCurrency)}
+                      <td style={{ textAlign: 'right' }} className={t.type === 'transfer' ? 'amount-transfer' : (t.type === 'income' ? 'amount-income' : 'amount-expense')}>
+                        {t.type === 'income' ? '+' : (t.type === 'expense' ? '-' : '')}{formatCurrency(Number(t.amount) * exchangeRate, baseCurrency)}
                       </td>
                       <td>
                         <div className="flex gap-1" style={{ justifyContent: 'flex-end' }}>

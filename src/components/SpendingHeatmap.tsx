@@ -48,10 +48,10 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
 }
 
   const dailyStats = useMemo(() => {
-    const stats: Record<string, { income: number, expense: number, net: number }> = {}
+    const stats: Record<string, { income: number, expense: number, net: number, pnl: number }> = {}
     transactions.forEach(t => {
       const d = typeof t.date === 'string' ? t.date.substring(0, 10) : t.date
-      if (!stats[d]) stats[d] = { income: 0, expense: 0, net: 0 }
+      if (!stats[d]) stats[d] = { income: 0, expense: 0, net: 0, pnl: 0 }
       const amt = Number(t.amount)
       if (t.type === 'expense') {
         stats[d].expense += amt
@@ -60,12 +60,7 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
         stats[d].income += amt
         stats[d].net += amt
       } else if (t.type === 'pnl') {
-        // PnL can be positive or negative
-        if (amt >= 0) {
-            stats[d].income += amt
-        } else {
-            stats[d].expense += Math.abs(amt)
-        }
+        stats[d].pnl += amt
         stats[d].net += amt
       }
     })
@@ -173,7 +168,7 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
         {padding.map(p => <div key={`p-${p}`} />)}
         {daysArr.map(day => {
           const dateStr = `${displayYear}-${String(displayMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-          const stats = dailyStats[dateStr] || { income: 0, expense: 0, net: 0 }
+          const stats = dailyStats[dateStr] || { income: 0, expense: 0, net: 0, pnl: 0 }
           const style = getHeatStyle(stats.net)
           
           return (
@@ -191,10 +186,16 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
 
               <div className="tooltip">
                 <div className="tt-date">{day} {daysLabel}</div>
-                <div className="tt-row in">↑ {formatCurrency(stats.income * exchangeRate, baseCurrency)}</div>
-                <div className="tt-row out">↓ {formatCurrency(stats.expense * exchangeRate, baseCurrency)}</div>
+                <div className="tt-row in">↑ Income: {formatCurrency(stats.income * exchangeRate, baseCurrency)}</div>
+                <div className="tt-row out">↓ Expense: {formatCurrency(stats.expense * exchangeRate, baseCurrency)}</div>
+                {stats.pnl !== 0 && (
+                   <div style={{ fontSize: '11px', opacity: 0.8, marginBottom: '6px', color: stats.pnl >= 0 ? 'var(--green)' : '#ef4444' }}>
+                      {stats.pnl >= 0 ? '📈' : '📉'} Market: {formatCurrency(stats.pnl * exchangeRate, baseCurrency)}
+                   </div>
+                )}
                 <div className="tt-divider"></div>
-                <div className={`tt-row net ${stats.net >= 0 ? 'green' : 'red'}`}>Net: {formatCurrency(stats.net * exchangeRate, baseCurrency)}</div>
+                <div className={`tt-row net ${stats.net >= 0 ? 'green' : 'red'}`}>Net Change: {formatCurrency(stats.net * exchangeRate, baseCurrency)}</div>
+                <p style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '4px', fontStyle: 'italic' }}>*Includes market price movements</p>
               </div>
             </div>
           )

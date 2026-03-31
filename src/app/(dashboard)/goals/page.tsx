@@ -139,11 +139,15 @@ export default function GoalsPage() {
     // 3. Sync to Ledger (Optional - Double Sync)
     if (saveForm.sync_to_ledger && saveForm.account_id && saveForm.target_account_id) {
       const today = getLocalDateISO()
+      const fromAcc = accounts.find(a => a.id === parseInt(saveForm.account_id))
+      const toAcc = accounts.find(a => a.id === parseInt(saveForm.target_account_id))
       const { error: tError } = await supabase.rpc('transfer_funds', {
         from_acc_id: parseInt(saveForm.account_id),
         to_acc_id: parseInt(saveForm.target_account_id),
         user_id_val: user.id,
-        amount_val: amountIDR,
+        amount_from: await convertToBase(amountIDR, 'IDR', fromAcc?.currency || 'IDR'),
+        amount_to: await convertToBase(amountIDR, 'IDR', toAcc?.currency || 'IDR'),
+        amount_idr: amountIDR,
         note_val: `: Saving for [${selectedGoal.name}]`,
         date_val: today
       })

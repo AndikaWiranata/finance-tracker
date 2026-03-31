@@ -14,7 +14,7 @@ export interface Account {
 export interface Transaction {
   id: number
   account_id: number
-  type: 'income' | 'expense'
+  type: 'income' | 'expense' | 'transfer'
   amount: number
   category: string
   note?: string

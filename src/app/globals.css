@@ -483,6 +483,11 @@ tbody tr:hover td {
   font-weight: 600;
 }
 
+.amount-transfer {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
 /* Modal */
 .modal-overlay {
   position: fixed;
@@ -595,6 +600,11 @@ tbody tr:hover td {
 .badge-expense {
   background: rgba(239, 68, 68, 0.15);
   color: var(--red);
+}
+
+.badge-transfer {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--blue);
 }
 
 /* Category badge */

@@ -533,8 +533,8 @@ export default function DashboardPage() {
                     <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{t.category}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t.accounts?.name} · {formatDate(t.date)}</div>
                   </div>
-                  <div className={t.type === 'income' ? 'amount-income' : 'amount-expense'}>
-                    {t.type === 'income' ? '+' : '-'}{formatCurrency(Number(t.amount) * exchangeRate, baseCurrency)}
+                  <div className={t.type === 'transfer' ? 'amount-transfer' : (t.type === 'income' ? 'amount-income' : 'amount-expense')}>
+                    {t.type === 'transfer' ? '' : (t.type === 'income' ? '+' : '-')}{formatCurrency(Number(t.amount) * exchangeRate, baseCurrency)}
                   </div>
                 </div>
               ))}
