@@ -63,33 +63,16 @@ export default function LoginPage() {
         setMode('login')
       } else {
         let finalEmail = emailOrUsername
-        
-        // Check if input is likely a username (no @)
+
+        // Jika bukan email (tidak ada @), lookup email via RPC by username
         if (!emailOrUsername.includes('@')) {
-          const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('username', emailOrUsername)
-            .single()
+          const { data: email, error: rpcError } = await supabase
+            .rpc('get_email_by_username', { p_username: emailOrUsername })
           
-          if (profileError || !profile) {
+          if (rpcError || !email) {
             throw new Error('Username tidak ditemukan')
           }
-          
-          // In a real app, you might use a custom RPC to get email by username
-          // or store email in the profiles table (which we'll assume for simplicity here)
-          const { data: userProfile } = await supabase
-            .from('profiles')
-            .select('email') // We'll add this to the schema
-            .eq('username', emailOrUsername)
-            .single()
-          
-          if (userProfile?.email) {
-            finalEmail = userProfile.email
-          } else {
-            // Fallback: This part usually requires a server-side lookup or email field in profiles
-            throw new Error('Gagal mendeteksi email dari username ini.')
-          }
+          finalEmail = email
         }
 
         const { error: signInError } = await supabase.auth.signInWithPassword({ 
@@ -162,7 +145,7 @@ export default function LoginPage() {
           <div className={styles.formGroup}>
             <div className={styles.inputIcon}><Mail size={18} /></div>
             <input
-              type={mode === 'signup' ? 'email' : 'text'}
+              type="text"
               required
               className={styles.input}
               placeholder={mode === 'login' ? "Email or Username" : "Email Address"}

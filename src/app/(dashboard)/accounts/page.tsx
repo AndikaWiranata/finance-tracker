@@ -64,14 +64,23 @@ export default function AccountsPage() {
       }
     }
 
-    // 2. Add Crypto Assets
-    for (const w of (cryptoW ?? [])) {
+    // 2. Add Crypto Assets (batch all coins in one request with auth token)
+    if ((cryptoW ?? []).length > 0) {
       try {
-        const res = await fetch(`/api/crypto?coin=${w.coin_symbol}`)
+        const { data: { session } } = await supabase.auth.getSession()
+        const symbols = [...new Set((cryptoW ?? []).map((w: any) => w.coin_symbol))].join(',')
+        const res = await fetch(`/api/crypto?coin=${symbols}`, {
+          headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        })
         const data = await res.json()
-        const val = (w.balance || 0) * Number(data.price_idr || 0)
-        const target = loadedAccs.find(a => a.id === w.account_id)
-        if (target) target.liveBalanceIDR += val
+        const isBatch = symbols.includes(',')
+
+        for (const w of (cryptoW ?? [])) {
+          const coinData = isBatch ? data[w.coin_symbol] : data
+          const val = (w.balance || 0) * Number(coinData?.price_idr || 0)
+          const target = loadedAccs.find((a: any) => a.id === w.account_id)
+          if (target) (target as any).liveBalanceIDR += val
+        }
       } catch (e) {}
     }
 
@@ -85,14 +94,26 @@ export default function AccountsPage() {
       } catch (e) {}
     }
 
-    // 4. Add Stock Assets
+    // 4. Add Stock Assets (with auth header + USD→IDR conversion, matching stocks/page.tsx logic)
     for (const s of (stockP ?? [])) {
       try {
-        const res = await fetch(`/api/stocks?ticker=${s.ticker}`)
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch(`/api/stocks?ticker=${s.ticker}`, {
+          headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        })
         const data = await res.json()
-        const val = (s.lots || 0) * 100 * Number(data.price || s.average_price || 0)
-        const target = loadedAccs.find(a => a.id === s.account_id)
-        if (target) target.liveBalanceIDR += val
+        if (data.price !== undefined) {
+          let price = Number(data.price)
+          // If USD stock, convert to IDR
+          if (data.currency === 'USD') {
+            const ratesData = await getFiatRates()
+            price = price * (ratesData?.['IDR'] || 15600)
+          }
+          const multiplier = s.ticker?.includes('.JK') ? 100 : 1
+          const val = (s.lots || 0) * multiplier * price
+          const target = loadedAccs.find((a: any) => a.id === s.account_id)
+          if (target) (target as any).liveBalanceIDR += val
+        }
       } catch (e) {}
     }
 

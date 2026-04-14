@@ -9,25 +9,11 @@ export async function getFiatRates() {
   }
 
   try {
-    const res = await fetch('https://api.exchangerate-api.com/v4/latest/USD')
+    // Use internal API route to avoid CORS issues when called from the browser
+    const res = await fetch('/api/rates')
     if (!res.ok) throw new Error('Failed to fetch fiat rates')
-    const data = await res.json()
-    cachedRates = data.rates
-    
-    // Enrich with Crypto (Approximate for free tier API fallback)
-    // Bitcoin & Ethereum
-    try {
-      if (cachedRates) {
-        const cRes = await fetch('https://min-api.cryptocompare.com/data/price?fsym=BTC&tsyms=USD')
-        const cData = await cRes.json()
-        if (cData && cData.USD) cachedRates.BTC = 1 / cData.USD
-        
-        const eRes = await fetch('https://min-api.cryptocompare.com/data/price?fsym=ETH&tsyms=USD')
-        const eData = await eRes.json()
-        if (eData && eData.USD) cachedRates.ETH = 1 / eData.USD
-      }
-    } catch (e) {}
-
+    const rates = await res.json()
+    cachedRates = rates
     lastFetch = now
     return cachedRates
   } catch (error) {
@@ -54,20 +40,20 @@ export async function convertToBase(amount: number, fromCurrency: string, toCurr
 
   // Convert fromCurrency to intermediate USD
   const usdAmount = fromCurrency === 'USD' ? amount : (amount / (rates[fromCurrency] || 1))
-  
+
   // Convert intermediate USD to toCurrency
   return usdAmount * (rates[toCurrency] || (toCurrency === 'IDR' ? 15500 : 1))
 }
 
 export function formatNumberInput(value: string | number, currency = 'IDR') {
   if (value === undefined || value === null || value === '') return ''
-  
+
   const isIDR = currency === 'IDR'
   const decimalSep = isIDR ? ',' : '.'
   const thousandSep = isIDR ? '.' : ','
 
   let str = value.toString()
-  
+
   if (typeof value === 'number') {
     str = str.replace('.', decimalSep)
   }
@@ -75,23 +61,23 @@ export function formatNumberInput(value: string | number, currency = 'IDR') {
   // 1. Strip thousand separator
   const stripRegex = new RegExp(`\\${thousandSep}`, 'g')
   str = str.replace(/\s/g, '').replace(stripRegex, '')
-  
+
   // 2. Identify decimal part
   const hasDecimal = str.includes(decimalSep)
   let parts = str.split(decimalSep)
   let integerPart = parts[0].replace(/\D/g, '')
   let decimalPart = parts.length > 1 ? parts[1].replace(/\D/g, '') : ''
-  
+
   if (integerPart === '' && hasDecimal) integerPart = '0'
 
   // Format integer part
   const locale = isIDR ? 'id-ID' : 'en-US'
   let formattedInt = integerPart ? new Intl.NumberFormat(locale).format(BigInt(integerPart)) : ''
-  
+
   if (hasDecimal) {
     return (formattedInt || '0') + decimalSep + decimalPart.substring(0, 8)
   }
-  
+
   return formattedInt
 }
 
@@ -106,10 +92,10 @@ export function parseNumberInput(value: string, currency = 'IDR') {
 
 export function formatCurrency(n: number, currency = 'IDR') {
   const locale = currency === 'IDR' ? 'id-ID' : (currency === 'USD' ? 'en-US' : 'en-GB')
-  return new Intl.NumberFormat(locale, { 
-    style: 'currency', 
-    currency, 
-    maximumFractionDigits: currency === 'IDR' ? 0 : 2 
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: currency === 'IDR' ? 0 : 2
   }).format(n)
 }
 
