@@ -168,8 +168,13 @@ export default function DashboardPage() {
               headers: { 'Authorization': `Bearer ${session?.access_token}` }
             })
             const d = await res.json()
-            const val = (s.lots || 0) * 100 * Number(d.price || s.average_price || 0)
-            const pnl24h = (s.lots || 0) * 100 * Number(d.change || 0)
+            
+            // Fix lot multiplier: Indonesia (.JK) = 100, Others = 1
+            const isIndo = s.ticker.toUpperCase().endsWith('.JK')
+            const multiplier = isIndo ? 100 : 1
+            
+            const val = (s.lots || 0) * multiplier * Number(d.price || s.average_price || 0)
+            const pnl24h = (s.lots || 0) * multiplier * Number(d.change || 0)
             totalFloating += pnl24h
             if (!catStats['stock']) catStats['stock'] = { income: 0, expense: 0, pnl: 0 }
             catStats['stock'].pnl += pnl24h

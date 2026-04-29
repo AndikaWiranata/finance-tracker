@@ -147,7 +147,26 @@ export default function AccountsPage() {
     }
 
     if (editId) {
+      // Read old balance to calculate adjustment
+      const { data: oldAcc } = await supabase.from('accounts').select('balance').eq('id', editId).single()
+      const oldBalance = Number(oldAcc?.balance || 0)
+      const diff = balance - oldBalance
+      
       await supabase.from('accounts').update(payload).eq('id', editId)
+      
+      // Record a manual adjustment transaction so PnL inference stays accurate
+      if (Math.abs(diff) > 0.01) {
+        const todayStr = new Date().toISOString().slice(0, 10)
+        await supabase.from('transactions').insert({
+          user_id: user.id,
+          account_id: editId,
+          type: diff > 0 ? 'income' : 'expense',
+          amount: Math.abs(diff),
+          category: 'Adjustment',
+          note: 'Manual balance adjustment',
+          date: todayStr
+        })
+      }
       toast.success('Account updated!')
     } else {
       await supabase.from('accounts').insert(payload)

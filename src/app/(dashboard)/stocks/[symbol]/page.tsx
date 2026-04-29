@@ -56,7 +56,15 @@ export default function StockDetailPage() {
           headers: { 'Authorization': `Bearer ${session?.access_token}` }
         })
         const data = await res.json()
-        setLivePrice(data)
+        
+        if (data.price !== undefined) {
+          let price = Number(data.price)
+          if (data.currency === 'USD') {
+            const frates = await getFiatRates()
+            price = price * (frates?.['IDR'] || 15600)
+          }
+          setLivePrice({ ...data, price_idr_internal: price })
+        }
       } catch (e) {}
 
       setLoading(false)
@@ -98,7 +106,7 @@ export default function StockDetailPage() {
                 <h1 style={{ fontSize: 32, fontWeight: 800, margin: 0 }}>{tickerSymbol.split('.')[0]}</h1>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
                     <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>
-                        {livePrice?.price ? formatCurrency(Number(livePrice.price) * exchangeRate, baseCurrency) : '---'}
+                        {livePrice?.price_idr_internal ? formatCurrency(Number(livePrice.price_idr_internal) * exchangeRate, baseCurrency) : '---'}
                     </div>
                     {livePrice && (
                         <div style={{ 
@@ -115,8 +123,8 @@ export default function StockDetailPage() {
 
         <div className="card" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.05) 100%)', border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Kepemilikan Saham</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: '#ec4899' }}>{totalLots} Lot</div>
-            <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>≈ {formatCurrency(totalLots * 100 * (livePrice?.price || 0) * exchangeRate, baseCurrency)}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#ec4899' }}>{totalLots} {tickerSymbol.includes('.JK') ? 'Lot' : 'Shares'}</div>
+            <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>≈ {formatCurrency(totalLots * (tickerSymbol.includes('.JK') ? 100 : 1) * (livePrice?.price_idr_internal || 0) * exchangeRate, baseCurrency)}</div>
         </div>
       </div>
 
@@ -137,8 +145,8 @@ export default function StockDetailPage() {
                             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Avg: {formatCurrency(p.average_price * exchangeRate, baseCurrency)}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: 14, fontWeight: 700 }}>{p.lots} Lot</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{formatCurrency(p.lots * 100 * (livePrice?.price || 0) * exchangeRate, baseCurrency)}</div>
+                            <div style={{ fontSize: 14, fontWeight: 700 }}>{p.lots} {tickerSymbol.includes('.JK') ? 'Lot' : 'Shares'}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{formatCurrency(p.lots * (tickerSymbol.includes('.JK') ? 100 : 1) * (livePrice?.price_idr_internal || 0) * exchangeRate, baseCurrency)}</div>
                         </div>
                     </div>
                 ))}

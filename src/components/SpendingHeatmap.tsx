@@ -48,20 +48,22 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
 }
 
   const dailyStats = useMemo(() => {
-    const stats: Record<string, { income: number, expense: number, net: number, pnl: number }> = {}
+    const stats: Record<string, { income: number, expense: number, net: number, pnl: number, totalNet: number }> = {}
     transactions.forEach(t => {
       const d = typeof t.date === 'string' ? t.date.substring(0, 10) : t.date
-      if (!stats[d]) stats[d] = { income: 0, expense: 0, net: 0, pnl: 0 }
+      if (!stats[d]) stats[d] = { income: 0, expense: 0, net: 0, pnl: 0, totalNet: 0 }
       const amt = Number(t.amount)
       if (t.type === 'expense') {
         stats[d].expense += amt
-        stats[d].net -= amt
+        stats[d].net -= amt        // real cashflow only
+        stats[d].totalNet -= amt   // also affects total
       } else if (t.type === 'income') {
         stats[d].income += amt
-        stats[d].net += amt
+        stats[d].net += amt        // real cashflow only
+        stats[d].totalNet += amt   // also affects total
       } else if (t.type === 'pnl') {
-        stats[d].pnl += amt
-        stats[d].net += amt
+        stats[d].pnl += amt        // market movement
+        stats[d].totalNet += amt   // affects color but NOT net
       }
     })
     return stats
@@ -74,8 +76,9 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
     for (let i = 1; i <= daysInMonth; i++) {
         const d = `${displayYear}-${String(displayMonth + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`
         if (dailyStats[d]) {
-            if (dailyStats[d].net > 0) maxGain = Math.max(maxGain, dailyStats[d].net)
-            if (dailyStats[d].net < 0) maxLoss = Math.max(maxLoss, Math.abs(dailyStats[d].net))
+            // Use totalNet (cashflow + pnl) for color intensity
+            if (dailyStats[d].totalNet > 0) maxGain = Math.max(maxGain, dailyStats[d].totalNet)
+            if (dailyStats[d].totalNet < 0) maxLoss = Math.max(maxLoss, Math.abs(dailyStats[d].totalNet))
         }
     }
     return { maxGain, maxLoss }
@@ -95,17 +98,17 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
     return { income, expense, net: income - expense }
   }, [dailyStats, displayMonth, displayYear])
 
-  const getHeatStyle = (net: number) => {
-    if (net === 0) return { background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.05)' }
+  const getHeatStyle = (totalNet: number) => {
+    if (totalNet === 0) return { background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.05)' }
     
-    if (net > 0) {
-        const intensity = Math.min(net / intensities.maxGain, 1)
+    if (totalNet > 0) {
+        const intensity = Math.min(totalNet / intensities.maxGain, 1)
         return {
             background: `rgba(34, 197, 94, ${0.08 + intensity * 0.22})`,
             borderColor: `rgba(34, 197, 94, ${0.1 + intensity * 0.3})`,
         }
     } else {
-        const intensity = Math.min(Math.abs(net) / intensities.maxLoss, 1)
+        const intensity = Math.min(Math.abs(totalNet) / intensities.maxLoss, 1)
         return {
             background: `rgba(239, 68, 68, ${0.08 + intensity * 0.22})`,
             borderColor: `rgba(239, 68, 68, ${0.1 + intensity * 0.3})`,
@@ -168,8 +171,8 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
         {padding.map(p => <div key={`p-${p}`} />)}
         {daysArr.map(day => {
           const dateStr = `${displayYear}-${String(displayMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-          const stats = dailyStats[dateStr] || { income: 0, expense: 0, net: 0, pnl: 0 }
-          const style = getHeatStyle(stats.net)
+          const stats = dailyStats[dateStr] || { income: 0, expense: 0, net: 0, pnl: 0, totalNet: 0 }
+          const style = getHeatStyle(stats.totalNet)  // color based on cashflow + market
           
           return (
             <div 

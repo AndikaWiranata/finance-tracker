@@ -74,25 +74,20 @@ export default function StocksPage() {
         if (data.price !== undefined) {
           let price = Number(data.price)
           let change = Number(data.change || 0)
-          let rate = 1
           
           // Automatic conversion IF the API reports currency as USD
           if (data.currency === 'USD') {
-            const { data: { session } } = await supabase.auth.getSession()
-            const resIDR = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=USD&tsyms=IDR`, {
-              headers: { 'Authorization': `Bearer ${session?.access_token}` }
-            })
-            const rateData = await resIDR.json()
-            rate = rateData.IDR || 15600
-            price = price * rate
-            change = change * rate
+            const frates = await getFiatRates()
+            const usdToIdr = frates?.['IDR'] || 15600
+            price = price * usdToIdr
+            change = change * usdToIdr
           }
 
           dataMap[s.id] = {
             price,
             change,
             changePct: Number(data.changePct || 0),
-            rate
+            rate: 1 // Rate is now internal to the price calculation
           }
         }
       } catch (e) {}
@@ -182,10 +177,10 @@ export default function StocksPage() {
           {stocks.map(st => {
             const live = liveData[st.id]
             const multiplier = st.ticker?.includes('.JK') ? 100 : 1
-            const currentPrice = live?.price || st.average_price
+            const currentPrice = live?.price || (st.average_price * (st.ticker?.includes('.JK') ? 1 : 15600))
             const totalShares = st.lots * multiplier
             const totalValue = totalShares * currentPrice
-            const investedVal = totalShares * (st.average_price * (live?.rate || 1))
+            const investedVal = totalShares * (st.average_price * (st.ticker?.includes('.JK') ? 1 : 15600))
             const profitLoss = totalValue - investedVal
             const plPercent = investedVal === 0 ? 0 : profitLoss / investedVal
             const dailyPNL = totalShares * (live?.change || 0)
