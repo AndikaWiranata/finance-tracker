@@ -1,5 +1,5 @@
 'use client'
-import React, { useMemo, useState, useEffect } from 'react'
+import React, { useMemo, useState, useEffect, useRef } from 'react'
 import { ChevronLeft, ChevronRight, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/AuthProvider'
@@ -173,6 +173,20 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
           const dateStr = `${displayYear}-${String(displayMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
           const stats = dailyStats[dateStr] || { income: 0, expense: 0, net: 0, pnl: 0, totalNet: 0 }
           const style = getHeatStyle(stats.totalNet)  // color based on cashflow + market
+
+          // Determine column position (0-indexed) to avoid tooltip clipping
+          const colIndex = (padding.length + day - 1) % 7
+          let tooltipStyle: React.CSSProperties = { left: '50%', transform: 'translateX(-50%)' }
+          
+          if (colIndex === 0) {
+            tooltipStyle = { left: '0', transform: 'translateX(0)' }
+          } else if (colIndex === 6) {
+            tooltipStyle = { right: '0', left: 'auto', transform: 'translateX(0)' }
+          } else if (colIndex === 1) {
+            tooltipStyle = { left: '20%', transform: 'translateX(-20%)' }
+          } else if (colIndex === 5) {
+            tooltipStyle = { right: '20%', left: 'auto', transform: 'translateX(20%)' }
+          }
           
           return (
             <div 
@@ -187,7 +201,7 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
                   {stats.expense > 0 && <span className="s-out">-{formatValue(stats.expense)}</span>}
               </div>
 
-              <div className="tooltip">
+              <div className="tooltip" style={tooltipStyle}>
                 <div className="tt-date">{day} {daysLabel}</div>
                 <div className="tt-row in">↑ Income: {formatCurrency(stats.income * exchangeRate, baseCurrency)}</div>
                 <div className="tt-row out">↓ Expense: {formatCurrency(stats.expense * exchangeRate, baseCurrency)}</div>
@@ -211,7 +225,7 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
             background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: 20px;
-            overflow: hidden; /* Prevent internal overflow from breaking layout */
+            position: relative;
         }
         .heatmap-header {
             margin-bottom: 24px;
@@ -325,8 +339,6 @@ export default function SpendingHeatmap({ transactions }: SpendingHeatmapProps) 
         .tooltip {
             position: absolute;
             bottom: 110%;
-            left: 50%;
-            transform: translateX(-50%);
             background: #1a1d27;
             border: 1px solid var(--border);
             padding: 12px;
